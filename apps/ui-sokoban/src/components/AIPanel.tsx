@@ -72,9 +72,11 @@ export function AIPanel({
   const [inflightSeconds, setInflightSeconds] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
   const [wasManuallyStopped, setWasManuallyStopped] = useState(false)
+  const [storedSolution, setStoredSolution] = useState<MoveDirection[]>([])
 
   const abortRef = useRef(false)
   const isRunningRef = useRef(false)
+  const isReplayingRef = useRef(false)
   const movesRef = useRef<MoveDirection[]>([])
   const moveIndexRef = useRef(0)
   const onMoveRef = useRef(onMove)
@@ -116,8 +118,10 @@ export function AIPanel({
       setIsRunning(false)
       setInflightStartTime(null)
       setWasManuallyStopped(false)
+      setStoredSolution([])
       abortRef.current = true
       isRunningRef.current = false
+      isReplayingRef.current = false
       setSessionMetrics(createSessionMetrics())
       onInferenceTimeChange?.(null)
     }
@@ -222,9 +226,13 @@ export function AIPanel({
     }))
     setPlannedMoves(moves)
 
+    // Store solution for replay
+    setStoredSolution(response.moves)
+
     // Set up for execution
     movesRef.current = response.moves
     moveIndexRef.current = 0
+    isReplayingRef.current = false
 
     // Start executing moves after a short delay
     setTimeout(() => {
@@ -250,9 +258,44 @@ export function AIPanel({
     setAiReasoning(null)
     setInflightStartTime(null)
     setWasManuallyStopped(false)
+    setStoredSolution([])
     setSessionMetrics(createSessionMetrics())
     onReset()
   }, [onReset])
+
+  // Replay the stored AI solution from the beginning
+  const handleReplay = useCallback(() => {
+    if (storedSolution.length === 0) return
+
+    // Mark as replaying so we preserve session metrics
+    isReplayingRef.current = true
+
+    // Reset puzzle state
+    onReset()
+
+    // Reset UI state but keep stored solution and session metrics
+    setIsRunning(true)
+    isRunningRef.current = true
+    setError(null)
+    setWasManuallyStopped(false)
+
+    // Create fresh planned moves from stored solution
+    const moves: ExtendedPlannedMove[] = storedSolution.map((direction) => ({
+      id: uuidv4(),
+      direction,
+      status: 'pending' as PlannedMoveStatus,
+    }))
+    setPlannedMoves(moves)
+
+    // Set up for execution
+    movesRef.current = storedSolution
+    moveIndexRef.current = 0
+
+    // Start executing moves after a short delay
+    setTimeout(() => {
+      executeNextMove()
+    }, 300)
+  }, [storedSolution, onReset, executeNextMove])
 
   const togglePromptOption = (key: keyof PromptOptions) => {
     if (key === 'executionMode') return // Not a boolean option
@@ -441,7 +484,10 @@ export function AIPanel({
         <div className="space-y-2 flex-shrink-0">
           {aiCompleted ? (
             <>
-              <Button onClick={handleResetAI} className="w-full" size="sm">
+              <Button onClick={handleReplay} className="w-full" size="sm">
+                Replay AI Solution
+              </Button>
+              <Button onClick={handleResetAI} variant="outline" className="w-full" size="sm">
                 Reset
               </Button>
             </>

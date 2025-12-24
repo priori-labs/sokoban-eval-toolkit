@@ -1,8 +1,9 @@
 import { Button } from '@sokoban-eval-toolkit/ui-library/components/button'
 import { Separator } from '@sokoban-eval-toolkit/ui-library/components/separator'
-import type { GameState } from '@src/types'
+import type { GameState, MoveDirection } from '@src/types'
 import { getBoxesOnGoalsCount, isSimpleDeadlock } from '@src/utils/gameEngine'
-import { AlertTriangle, RotateCcw, Undo2 } from 'lucide-react'
+import { solvePuzzle } from '@src/utils/sokobanSolver'
+import { AlertTriangle, Play, RotateCcw, Undo2 } from 'lucide-react'
 import { useMemo } from 'react'
 
 interface ControlPanelProps {
@@ -11,6 +12,8 @@ interface ControlPanelProps {
   onReset: () => void
   disabled?: boolean
   aiInferenceTimeMs?: number | null
+  onRunSolution?: (moves: MoveDirection[]) => void
+  isPlayingSolution?: boolean
 }
 
 export function ControlPanel({
@@ -19,6 +22,8 @@ export function ControlPanel({
   onReset,
   disabled = false,
   aiInferenceTimeMs,
+  onRunSolution,
+  isPlayingSolution = false,
 }: ControlPanelProps) {
   const canUndo = state !== null && state.moveHistory.length > 0
 
@@ -45,6 +50,21 @@ export function ControlPanel({
   const boxesOnGoals = state ? getBoxesOnGoalsCount(state) : 0
   const totalBoxes = state?.boxes.length ?? 0
   const hasDeadlock = state ? isSimpleDeadlock(state) : false
+
+  // Compute optimal solution from current state
+  const solverResult = useMemo(() => {
+    if (!state || state.isWon) return null
+
+    // Create a temporary level with current positions
+    const tempLevel = {
+      ...state.level,
+      playerStart: state.playerPos,
+      boxStarts: state.boxes,
+    }
+
+    const result = solvePuzzle(tempLevel, 50000)
+    return result.solvable ? { moveCount: result.moveCount, solution: result.solution } : null
+  }, [state])
 
   return (
     <div className="space-y-3">
@@ -79,6 +99,39 @@ export function ControlPanel({
           <div className="text-lg font-semibold tabular-nums">{displayTime ?? '--:--'}</div>
         </div>
       </div>
+
+      {/* Solver optimal solution */}
+      {state && !state.isWon && (
+        <div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+          {solverResult !== null ? (
+            <>
+              <span>
+                Shortest:{' '}
+                <span className="font-semibold text-foreground">{solverResult.moveCount}</span>{' '}
+                moves
+              </span>
+              {onRunSolution && solverResult.solution && (
+                <Button
+                  onClick={() => {
+                    if (solverResult.solution) {
+                      onRunSolution(solverResult.solution)
+                    }
+                  }}
+                  disabled={disabled || isPlayingSolution}
+                  size="sm"
+                  variant="ghost"
+                  className="h-5 px-1.5 text-[10px]"
+                  title="Run solution"
+                >
+                  <Play className="w-3 h-3" />
+                </Button>
+              )}
+            </>
+          ) : (
+            <span className="text-amber-500">No solution found</span>
+          )}
+        </div>
+      )}
 
       {/* Deadlock warning */}
       {hasDeadlock && !state?.isWon && (

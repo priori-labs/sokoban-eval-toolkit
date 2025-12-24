@@ -22,7 +22,7 @@ export interface SokobanLevel {
   optimalMoves?: number // Minimum moves to solve (from solver)
 }
 
-export type Difficulty = 'easy' | 'medium'
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'classic'
 
 // Movement
 export type MoveDirection = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT'

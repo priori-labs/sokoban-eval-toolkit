@@ -40,26 +40,24 @@ export function generateSokobanPrompt(state: GameState, options: PromptOptions):
     parts.push('')
   }
 
-  if (options.coordinateFormat) {
-    parts.push('## Positions (x, y where 0,0 is top-left)')
-    parts.push(`- Player: (${state.playerPos.x}, ${state.playerPos.y})`)
-    parts.push(`- Boxes: ${state.boxes.map((b) => `(${b.x}, ${b.y})`).join(', ')}`)
-    parts.push(`- Goals: ${state.level.goals.map((g) => `(${g.x}, ${g.y})`).join(', ')}`)
-    parts.push(`- Grid size: ${state.level.width}x${state.level.height}`)
-    parts.push('')
-  }
+  // Coordinates are always included
+  parts.push('## Positions (x, y where 0,0 is top-left)')
+  parts.push(`- Player: (${state.playerPos.x}, ${state.playerPos.y})`)
+  parts.push(`- Boxes: ${state.boxes.map((b) => `(${b.x}, ${b.y})`).join(', ')}`)
+  parts.push(`- Goals: ${state.level.goals.map((g) => `(${g.x}, ${g.y})`).join(', ')}`)
+  parts.push(`- Grid size: ${state.level.width}x${state.level.height}`)
+  parts.push('')
 
-  if (options.includeNotationGuide) {
-    parts.push('## Notation Guide')
-    parts.push('Standard Sokoban notation uses lowercase for moves and uppercase for pushes:')
-    parts.push('- u/U = Up')
-    parts.push('- d/D = Down')
-    parts.push('- l/L = Left')
-    parts.push('- r/R = Right')
-    parts.push('')
-    parts.push('Example solution: "rrddrr" means Right, Right, Down, Down, Right, Right')
-    parts.push('')
-  }
+  // Notation guide is always included
+  parts.push('## Notation Guide')
+  parts.push('Standard Sokoban notation uses lowercase for moves and uppercase for pushes:')
+  parts.push('- u/U = Up')
+  parts.push('- d/D = Down')
+  parts.push('- l/L = Left')
+  parts.push('- r/R = Right')
+  parts.push('')
+  parts.push('Example solution: "rrddrr" means Right, Right, Down, Down, Right, Right')
+  parts.push('')
 
   // Progress info
   const boxesOnGoals = state.boxes.filter(

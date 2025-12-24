@@ -452,30 +452,26 @@ export function AIPanel({
         <div className="space-y-1.5">
           <Label className="text-xs">Prompt Options</Label>
           <div className="flex flex-col gap-2">
-            {[
-              { key: 'asciiGrid' as const, label: 'ASCII Grid' },
-              { key: 'coordinateFormat' as const, label: 'Coordinates' },
-              { key: 'includeNotationGuide' as const, label: 'Notation Guide' },
-            ].map(({ key, label }) => {
-              const isDisabled = isRunning || plannedMoves.length > 0
-              return (
-                <div key={key} className="flex items-center gap-2">
-                  <Checkbox
-                    id={key}
-                    checked={promptOptions[key]}
-                    onCheckedChange={() => togglePromptOption(key)}
-                    disabled={isDisabled}
-                    className="h-3.5 w-3.5"
-                  />
-                  <Label
-                    htmlFor={key}
-                    className={`text-xs ${isDisabled ? 'text-muted-foreground cursor-default' : 'cursor-pointer'}`}
-                  >
-                    {label}
-                  </Label>
-                </div>
-              )
-            })}
+            {/* ASCII Grid is the only toggleable option */}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="asciiGrid"
+                checked={promptOptions.asciiGrid}
+                onCheckedChange={() => togglePromptOption('asciiGrid')}
+                disabled={isRunning || plannedMoves.length > 0}
+                className="h-3.5 w-3.5"
+              />
+              <Label
+                htmlFor="asciiGrid"
+                className={`text-xs ${isRunning || plannedMoves.length > 0 ? 'text-muted-foreground cursor-default' : 'cursor-pointer'}`}
+              >
+                ASCII Grid
+              </Label>
+            </div>
+            {/* Coordinates and Notation Guide are always included */}
+            <div className="text-[10px] text-muted-foreground ml-5">
+              Coordinates + Notation Guide always included
+            </div>
           </div>
         </div>
         <Separator />

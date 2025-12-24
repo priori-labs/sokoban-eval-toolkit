@@ -13,7 +13,7 @@ import {
   resetGame,
   undoMove,
 } from '@src/utils/gameEngine'
-import { generateEasyLevel } from '@src/utils/levelGenerator'
+import { generateLevel } from '@src/utils/levelGenerator'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AIPanel } from './components/AIPanel'
 import { ControlPanel } from './components/ControlPanel'
@@ -25,6 +25,8 @@ export function SokobanGame() {
   const [currentLevel, setCurrentLevel] = useState<SokobanLevel | null>(null)
   const [aiInferenceTimeMs, setAiInferenceTimeMs] = useState<number | null>(null)
   const initialLoadDone = useRef(false)
+  const [isPlayingSolution, setIsPlayingSolution] = useState(false)
+  const solutionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Handle level load
   const handleLevelLoad = useCallback((level: SokobanLevel) => {
@@ -38,7 +40,7 @@ export function SokobanGame() {
     if (initialLoadDone.current) return
     initialLoadDone.current = true
 
-    const level = generateEasyLevel()
+    const level = generateLevel('easy')
     handleLevelLoad(level)
   }, [handleLevelLoad])
 
@@ -72,6 +74,70 @@ export function SokobanGame() {
     [gameState],
   )
 
+  // Handle running solution (plays moves with animation)
+  const handleRunSolution = useCallback(
+    (moves: MoveDirection[]) => {
+      if (!gameState || moves.length === 0) return
+
+      // Clear any existing solution playback
+      if (solutionTimeoutRef.current) {
+        clearTimeout(solutionTimeoutRef.current)
+      }
+
+      setIsPlayingSolution(true)
+
+      // Use a recursive approach that passes the current index
+      const playMove = (index: number) => {
+        if (index >= moves.length) {
+          setIsPlayingSolution(false)
+          return
+        }
+
+        const direction = moves[index]
+        if (!direction) {
+          setIsPlayingSolution(false)
+          return
+        }
+
+        setGameState((currentState) => {
+          if (!currentState || currentState.isWon) {
+            setIsPlayingSolution(false)
+            return currentState
+          }
+
+          const newState = executeMove(currentState, direction, 'ai')
+
+          if (newState) {
+            // Schedule next move outside the setState callback
+            const nextIndex = index + 1
+            if (nextIndex < moves.length && !newState.isWon) {
+              solutionTimeoutRef.current = setTimeout(() => playMove(nextIndex), 300)
+            } else {
+              setIsPlayingSolution(false)
+            }
+            return newState
+          }
+
+          setIsPlayingSolution(false)
+          return currentState
+        })
+      }
+
+      // Start playing from index 0
+      playMove(0)
+    },
+    [gameState],
+  )
+
+  // Cleanup solution timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (solutionTimeoutRef.current) {
+        clearTimeout(solutionTimeoutRef.current)
+      }
+    }
+  }, [])
+
   // Handle undo
   const handleUndo = useCallback(() => {
     if (!gameState) return
@@ -84,10 +150,11 @@ export function SokobanGame() {
     setGameState(resetGame(gameState))
   }, [gameState])
 
-  // Generate new puzzle (for easy difficulty)
+  // Generate new puzzle (for generated difficulties)
   const handleRegenerate = useCallback(() => {
-    if (currentLevel?.difficulty === 'easy') {
-      const newLevel = generateEasyLevel()
+    const difficulty = currentLevel?.difficulty
+    if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
+      const newLevel = generateLevel(difficulty)
       handleLevelLoad(newLevel)
     }
   }, [currentLevel, handleLevelLoad])
@@ -158,6 +225,8 @@ export function SokobanGame() {
               onReset={handleReset}
               disabled={false}
               aiInferenceTimeMs={aiInferenceTimeMs}
+              onRunSolution={handleRunSolution}
+              isPlayingSolution={isPlayingSolution}
             />
           </CardContent>
         </Card>

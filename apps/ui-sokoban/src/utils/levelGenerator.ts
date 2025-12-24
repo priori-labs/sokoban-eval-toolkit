@@ -1,4 +1,4 @@
-import type { CellTerrain, Position, SokobanLevel } from '../types'
+import type { CellTerrain, Difficulty, Position, SokobanLevel } from '../types'
 import { solvePuzzle } from './sokobanSolver'
 
 interface GeneratorOptions {
@@ -8,6 +8,7 @@ interface GeneratorOptions {
   minSolutionLength?: number
   maxSolutionLength?: number
   maxAttempts?: number
+  maxSolverNodes?: number
 }
 
 const DEFAULT_OPTIONS: Required<GeneratorOptions> = {
@@ -17,10 +18,42 @@ const DEFAULT_OPTIONS: Required<GeneratorOptions> = {
   minSolutionLength: 5,
   maxSolutionLength: 15,
   maxAttempts: 200,
+  maxSolverNodes: 50000,
+}
+
+// Difficulty presets
+const DIFFICULTY_PRESETS: Record<Exclude<Difficulty, 'classic'>, Required<GeneratorOptions>> = {
+  easy: {
+    width: 8,
+    height: 8,
+    numBoxes: 2,
+    minSolutionLength: 5,
+    maxSolutionLength: 15,
+    maxAttempts: 200,
+    maxSolverNodes: 50000,
+  },
+  medium: {
+    width: 9,
+    height: 9,
+    numBoxes: 3,
+    minSolutionLength: 10,
+    maxSolutionLength: 25,
+    maxAttempts: 400,
+    maxSolverNodes: 100000,
+  },
+  hard: {
+    width: 10,
+    height: 10,
+    numBoxes: 4,
+    minSolutionLength: 15,
+    maxSolutionLength: 40,
+    maxAttempts: 600,
+    maxSolverNodes: 200000,
+  },
 }
 
 /**
- * Generate a solvable Sokoban puzzle with verified optimal solution.
+ * Generate a solvable Sokoban puzzle for the specified difficulty.
  *
  * Strategy:
  * 1. Create an open room with walls on the border
@@ -29,9 +62,67 @@ const DEFAULT_OPTIONS: Required<GeneratorOptions> = {
  * 4. Place player where they can execute the solution
  * 5. Verify with BFS solver and ensure solution length is within range
  */
+export function generateLevel(difficulty: Exclude<Difficulty, 'classic'>): SokobanLevel {
+  const opts = DIFFICULTY_PRESETS[difficulty]
+  const {
+    width,
+    height,
+    numBoxes,
+    minSolutionLength,
+    maxSolutionLength,
+    maxAttempts,
+    maxSolverNodes,
+  } = opts
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const result = tryGenerateLevel(width, height, numBoxes)
+    if (!result) continue
+
+    const candidateLevel: SokobanLevel = {
+      ...result,
+      id: `${difficulty}-generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      difficulty,
+      fileSource: 'generated',
+      puzzleNumber: attempt + 1,
+    }
+
+    // Verify with solver
+    const solverResult = solvePuzzle(candidateLevel, maxSolverNodes)
+
+    if (!solverResult.solvable) continue
+    if (solverResult.moveCount < minSolutionLength) continue
+    if (solverResult.moveCount > maxSolutionLength) continue
+
+    // Valid puzzle - add optimal moves and return
+    return {
+      ...candidateLevel,
+      optimalMoves: solverResult.moveCount,
+    }
+  }
+
+  // Fallback: return a simple puzzle for this difficulty
+  return createFallbackPuzzle(width, height, numBoxes, difficulty)
+}
+
+/**
+ * Generate an easy level (convenience wrapper).
+ */
 export function generateEasyLevel(options: GeneratorOptions = {}): SokobanLevel {
+  if (Object.keys(options).length === 0) {
+    return generateLevel('easy')
+  }
+
+  // Custom options provided - use them directly
   const opts = { ...DEFAULT_OPTIONS, ...options }
-  const { width, height, numBoxes, minSolutionLength, maxSolutionLength, maxAttempts } = opts
+  const {
+    width,
+    height,
+    numBoxes,
+    minSolutionLength,
+    maxSolutionLength,
+    maxAttempts,
+    maxSolverNodes,
+  } = opts
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const result = tryGenerateLevel(width, height, numBoxes)
@@ -46,7 +137,7 @@ export function generateEasyLevel(options: GeneratorOptions = {}): SokobanLevel 
     }
 
     // Verify with solver
-    const solverResult = solvePuzzle(candidateLevel, 50000)
+    const solverResult = solvePuzzle(candidateLevel, maxSolverNodes)
 
     if (!solverResult.solvable) continue
     if (solverResult.moveCount < minSolutionLength) continue
@@ -60,7 +151,7 @@ export function generateEasyLevel(options: GeneratorOptions = {}): SokobanLevel 
   }
 
   // Fallback: return a simple 2-box puzzle
-  return createFallbackPuzzle(width, height)
+  return createFallbackPuzzle(width, height, numBoxes, 'easy')
 }
 
 function tryGenerateLevel(
@@ -278,8 +369,13 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function createFallbackPuzzle(width: number, height: number): SokobanLevel {
-  // Create a simple but non-trivial 2-box puzzle
+function createFallbackPuzzle(
+  width: number,
+  height: number,
+  numBoxes: number,
+  difficulty: Exclude<Difficulty, 'classic'>,
+): SokobanLevel {
+  // Create a simple puzzle with the requested number of boxes
   const terrain: CellTerrain[][] = []
   for (let y = 0; y < height; y++) {
     const row: CellTerrain[] = []
@@ -296,25 +392,32 @@ function createFallbackPuzzle(width: number, height: number): SokobanLevel {
   const centerX = Math.floor(width / 2)
   const centerY = Math.floor(height / 2)
 
-  // Place two goals
-  terrain[centerY - 1][centerX + 2] = 'goal'
-  terrain[centerY + 1][centerX + 2] = 'goal'
+  // Place goals and boxes based on numBoxes
+  const goals: Position[] = []
+  const boxStarts: Position[] = []
+
+  for (let i = 0; i < numBoxes; i++) {
+    const yOffset = i - Math.floor(numBoxes / 2)
+    const goalY = centerY + yOffset
+    const boxY = centerY + yOffset
+
+    // Ensure we stay within bounds
+    if (goalY > 0 && goalY < height - 1) {
+      terrain[goalY][centerX + 2] = 'goal'
+      goals.push({ x: centerX + 2, y: goalY })
+      boxStarts.push({ x: centerX, y: boxY })
+    }
+  }
 
   const level: SokobanLevel = {
-    id: `easy-fallback-${Date.now()}`,
+    id: `${difficulty}-fallback-${Date.now()}`,
     width,
     height,
     terrain,
     playerStart: { x: centerX - 2, y: centerY },
-    boxStarts: [
-      { x: centerX, y: centerY - 1 },
-      { x: centerX, y: centerY + 1 },
-    ],
-    goals: [
-      { x: centerX + 2, y: centerY - 1 },
-      { x: centerX + 2, y: centerY + 1 },
-    ],
-    difficulty: 'easy',
+    boxStarts,
+    goals,
+    difficulty,
     fileSource: 'generated',
     puzzleNumber: 1,
   }

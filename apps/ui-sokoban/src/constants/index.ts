@@ -18,8 +18,10 @@ export const COLORS = {
 
 // Difficulty display names
 export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  easy: 'Easy (Generated)',
-  medium: 'Medium (Boxoban)',
+  easy: 'Easy (2 boxes)',
+  medium: 'Medium (3 boxes)',
+  hard: 'Hard (4 boxes)',
+  classic: 'Classic (Boxoban)',
 }
 
 // Move key mappings (arrow keys only)

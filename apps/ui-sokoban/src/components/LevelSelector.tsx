@@ -10,10 +10,21 @@ import {
 import { Separator } from '@sokoban-eval-toolkit/ui-library/components/separator'
 import { DIFFICULTY_LABELS } from '@src/constants'
 import type { Difficulty, SokobanLevel } from '@src/types'
-import { generateEasyLevel } from '@src/utils/levelGenerator'
+import { generateLevel } from '@src/utils/levelGenerator'
 import { getMediumLevel, getMediumLevelCount, getRandomMediumLevel } from '@src/utils/levelLoader'
-import { Dices, Shuffle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Dices, Shuffle } from 'lucide-react'
 import { useCallback, useState } from 'react'
+
+// Difficulties that use procedural generation
+const GENERATED_DIFFICULTIES: Exclude<Difficulty, 'classic'>[] = ['easy', 'medium', 'hard']
+
+// Info text for each difficulty
+const DIFFICULTY_INFO: Record<Difficulty, string> = {
+  easy: '8×8 puzzles with 2 boxes. Quick to solve, great for learning.',
+  medium: '9×9 puzzles with 3 boxes. More challenging with longer solutions.',
+  hard: '10×10 puzzles with 4 boxes. Complex puzzles requiring careful planning.',
+  classic: 'Curated puzzles from boxoban-levels (10×10, 4 boxes).',
+}
 
 interface LevelSelectorProps {
   onLevelLoad: (level: SokobanLevel) => void
@@ -24,10 +35,12 @@ export function LevelSelector({ onLevelLoad, disabled = false }: LevelSelectorPr
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [puzzleNumber, setPuzzleNumber] = useState<number>(1)
   const [error, setError] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
 
-  const mediumLevelCount = getMediumLevelCount()
+  const classicLevelCount = getMediumLevelCount()
+  const isGenerated = GENERATED_DIFFICULTIES.includes(difficulty as Exclude<Difficulty, 'classic'>)
 
-  const handleLoadMedium = useCallback(() => {
+  const handleLoadClassic = useCallback(() => {
     setError(null)
     const level = getMediumLevel(puzzleNumber - 1)
     if (level) {
@@ -37,23 +50,31 @@ export function LevelSelector({ onLevelLoad, disabled = false }: LevelSelectorPr
     }
   }, [puzzleNumber, onLevelLoad])
 
-  const handleRandomMedium = useCallback(() => {
+  const handleRandomClassic = useCallback(() => {
     setError(null)
     const level = getRandomMediumLevel()
     setPuzzleNumber(level.puzzleNumber)
     onLevelLoad(level)
   }, [onLevelLoad])
 
-  const handleGenerateEasy = useCallback(() => {
+  const handleGenerate = useCallback(() => {
+    if (!isGenerated) return
     setError(null)
-    try {
-      const level = generateEasyLevel()
-      onLevelLoad(level)
-    } catch (err) {
-      setError('Failed to generate puzzle')
-      console.error(err)
-    }
-  }, [onLevelLoad])
+    setIsGenerating(true)
+
+    // Use setTimeout to allow UI to update before potentially slow generation
+    setTimeout(() => {
+      try {
+        const level = generateLevel(difficulty as Exclude<Difficulty, 'classic'>)
+        onLevelLoad(level)
+      } catch (err) {
+        setError('Failed to generate puzzle')
+        console.error(err)
+      } finally {
+        setIsGenerating(false)
+      }
+    }, 10)
+  }, [difficulty, isGenerated, onLevelLoad])
 
   return (
     <div className="space-y-3">
@@ -71,7 +92,7 @@ export function LevelSelector({ onLevelLoad, disabled = false }: LevelSelectorPr
         <Select
           value={difficulty}
           onValueChange={(v) => setDifficulty(v as Difficulty)}
-          disabled={disabled}
+          disabled={disabled || isGenerating}
         >
           <SelectTrigger className="h-8 text-xs">
             <SelectValue />
@@ -86,67 +107,75 @@ export function LevelSelector({ onLevelLoad, disabled = false }: LevelSelectorPr
         </Select>
       </div>
 
-      {/* Easy mode - procedural generation */}
-      {difficulty === 'easy' ? (
-        <>
-          <div className="bg-muted/30 rounded-md px-3 py-2 text-xs text-muted-foreground">
-            Procedurally generated 8x8 puzzles with 1 box. Each puzzle is guaranteed solvable.
-          </div>
+      {/* Difficulty info */}
+      <div className="bg-muted/30 rounded-md px-3 py-2 text-xs text-muted-foreground">
+        {DIFFICULTY_INFO[difficulty]}
+      </div>
 
-          {/* Error message */}
-          {error && (
-            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded px-2 py-1.5">
-              {error}
-            </div>
-          )}
+      {/* Error message */}
+      {error && (
+        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded px-2 py-1.5">
+          {error}
+        </div>
+      )}
 
-          {/* Generate button */}
-          <Button
-            onClick={handleGenerateEasy}
-            disabled={disabled}
-            size="sm"
-            className="w-full h-8 text-xs"
-          >
-            <Dices className="w-3.5 h-3.5 mr-1.5" />
-            Generate Puzzle
-          </Button>
-        </>
+      {/* Generated difficulty modes */}
+      {isGenerated ? (
+        <Button
+          onClick={handleGenerate}
+          disabled={disabled || isGenerating}
+          size="sm"
+          className="w-full h-8 text-xs"
+        >
+          <Dices className="w-3.5 h-3.5 mr-1.5" />
+          {isGenerating ? 'Generating...' : 'Generate Puzzle'}
+        </Button>
       ) : (
         <>
-          {/* Medium mode - embedded levels */}
-          <div className="bg-muted/30 rounded-md px-3 py-2 text-xs text-muted-foreground">
-            {mediumLevelCount} puzzles from boxoban-levels (10x10, 4 boxes).
-          </div>
-
-          {/* Puzzle number */}
+          {/* Classic mode - embedded levels */}
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">Puzzle # (1-{mediumLevelCount})</span>
-            <Input
-              type="number"
-              min={1}
-              max={mediumLevelCount}
-              value={puzzleNumber}
-              onChange={(e) =>
-                setPuzzleNumber(
-                  Math.min(mediumLevelCount, Math.max(1, Number.parseInt(e.target.value) || 1)),
-                )
-              }
-              disabled={disabled}
-              className="h-8 text-xs"
-            />
-          </div>
-
-          {/* Error message */}
-          {error && (
-            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded px-2 py-1.5">
-              {error}
+            <span className="text-xs text-muted-foreground">Puzzle # (1-{classicLevelCount})</span>
+            <div className="flex gap-1">
+              <Button
+                onClick={() => setPuzzleNumber((n) => Math.max(1, n - 1))}
+                disabled={disabled || puzzleNumber <= 1}
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                title="Previous puzzle"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Input
+                type="number"
+                min={1}
+                max={classicLevelCount}
+                value={puzzleNumber}
+                onChange={(e) =>
+                  setPuzzleNumber(
+                    Math.min(classicLevelCount, Math.max(1, Number.parseInt(e.target.value) || 1)),
+                  )
+                }
+                disabled={disabled}
+                className="h-8 text-xs flex-1"
+              />
+              <Button
+                onClick={() => setPuzzleNumber((n) => Math.min(classicLevelCount, n + 1))}
+                disabled={disabled || puzzleNumber >= classicLevelCount}
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                title="Next puzzle"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
-          )}
+          </div>
 
           {/* Buttons */}
           <div className="flex gap-2">
             <Button
-              onClick={handleLoadMedium}
+              onClick={handleLoadClassic}
               disabled={disabled}
               size="sm"
               className="flex-1 h-8 text-xs"
@@ -154,7 +183,7 @@ export function LevelSelector({ onLevelLoad, disabled = false }: LevelSelectorPr
               Load Level
             </Button>
             <Button
-              onClick={handleRandomMedium}
+              onClick={handleRandomClassic}
               disabled={disabled}
               size="sm"
               variant="secondary"

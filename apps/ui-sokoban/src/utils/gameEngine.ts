@@ -181,8 +181,9 @@ export function undoMove(state: GameState): GameState {
 
   // If last move was a push, restore box position
   if (lastMove.wasPush && lastMove.previousBoxPos) {
-    // Find the box that was pushed (it's now at the position player would occupy if we reversed)
-    const pushedBoxCurrentPos = getNewPosition(lastMove.previousPlayerPos, lastMove.direction)
+    // Box was at previousBoxPos, then pushed one step in direction
+    // So box is now at previousBoxPos + direction
+    const pushedBoxCurrentPos = getNewPosition(lastMove.previousBoxPos, lastMove.direction)
     const boxIndex = hasBox(pushedBoxCurrentPos, newBoxes)
 
     if (boxIndex !== -1) {

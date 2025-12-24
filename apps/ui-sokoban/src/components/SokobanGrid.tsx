@@ -101,10 +101,7 @@ export function SokobanGrid({ state, highlightedCells = [], className = '' }: So
                       backgroundColor: cellBoxOnGoal
                         ? 'hsl(var(--sokoban-box-done))'
                         : 'hsl(var(--sokoban-box))',
-                      border:
-                        cellBoxOnGoal && state.isWon
-                          ? '2px solid hsl(var(--sokoban-box-done) / 0.7)'
-                          : '2px solid hsl(var(--sokoban-box) / 0.7)',
+                      border: cellBoxOnGoal ? 'none' : '2px solid hsl(var(--sokoban-box) / 0.7)',
                     }}
                   >
                     {cellBoxOnGoal && <span className="text-xs">✓</span>}

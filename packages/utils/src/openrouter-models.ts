@@ -165,4 +165,14 @@ export const OPENROUTER_MODELS: OpenRouterModel[] = [
     name: 'GLM 4.6',
     description: 'Z-AI GLM 4.6 model',
   },
+  {
+    id: 'deepseek/deepseek-v3.2',
+    name: 'DeepSeek V3.2',
+    description: 'DeepSeek V3.2 model',
+  },
+  {
+    id: 'deepseek/deepseek-v3.2-speciale',
+    name: 'DeepSeek V3.2 Speciale',
+    description: 'DeepSeek V3.2 Speciale model',
+  },
 ]

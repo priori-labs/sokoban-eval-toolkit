@@ -30,7 +30,10 @@ import type {
   PromptOptions,
   SessionMetrics,
 } from '@src/types'
+import { levelToAsciiWithCoords } from '@src/utils/levelParser'
 import { DEFAULT_PROMPT_OPTIONS, generateSokobanPrompt } from '@src/utils/promptGeneration'
+import { solvePuzzle } from '@src/utils/sokobanSolver'
+import { movesToNotation } from '@src/utils/solutionValidator'
 import { AlertCircle, Copy } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
@@ -67,10 +70,14 @@ export function AIPanel({
   const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics>(createSessionMetrics())
   const [error, setError] = useState<string | null>(null)
   const [rawResponse, setRawResponse] = useState<string | null>(null)
-  const [aiReasoning, setAiReasoning] = useState<string | null>(null)
+  const [nativeReasoning, setNativeReasoning] = useState<string | null>(null)
+  const [parsedReasoning, setParsedReasoning] = useState<string | null>(null)
   const [inflightStartTime, setInflightStartTime] = useState<number | null>(null)
   const [inflightSeconds, setInflightSeconds] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [copiedNativeReasoning, setCopiedNativeReasoning] = useState(false)
+  const [copiedParsedReasoning, setCopiedParsedReasoning] = useState(false)
+  const [copiedReasoningContext, setCopiedReasoningContext] = useState(false)
   const [wasManuallyStopped, setWasManuallyStopped] = useState(false)
   const [storedSolution, setStoredSolution] = useState<MoveDirection[]>([])
 
@@ -114,7 +121,8 @@ export function AIPanel({
       setPlannedMoves([])
       setError(null)
       setRawResponse(null)
-      setAiReasoning(null)
+      setNativeReasoning(null)
+      setParsedReasoning(null)
       setIsRunning(false)
       setInflightStartTime(null)
       setWasManuallyStopped(false)
@@ -188,7 +196,8 @@ export function AIPanel({
     isRunningRef.current = true
     setError(null)
     setRawResponse(null)
-    setAiReasoning(null)
+    setNativeReasoning(null)
+    setParsedReasoning(null)
     setWasManuallyStopped(false)
     abortRef.current = false
     setPlannedMoves([])
@@ -208,7 +217,8 @@ export function AIPanel({
     }
 
     setRawResponse(response.rawResponse)
-    setAiReasoning(response.reasoning ?? null)
+    setNativeReasoning(response.nativeReasoning ?? null)
+    setParsedReasoning(response.parsedReasoning ?? null)
     setSessionMetrics((prev) => updateSessionMetrics(prev, response))
 
     if (response.error || response.moves.length === 0) {
@@ -255,7 +265,8 @@ export function AIPanel({
     setPlannedMoves([])
     setError(null)
     setRawResponse(null)
-    setAiReasoning(null)
+    setNativeReasoning(null)
+    setParsedReasoning(null)
     setInflightStartTime(null)
     setWasManuallyStopped(false)
     setStoredSolution([])
@@ -319,8 +330,181 @@ export function AIPanel({
     }
   }, [previewPrompt])
 
+  const handleCopyNativeReasoning = useCallback(async () => {
+    if (!nativeReasoning) return
+    try {
+      await navigator.clipboard.writeText(nativeReasoning)
+      setCopiedNativeReasoning(true)
+      setTimeout(() => setCopiedNativeReasoning(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [nativeReasoning])
+
+  const handleCopyParsedReasoning = useCallback(async () => {
+    if (!parsedReasoning) return
+    try {
+      await navigator.clipboard.writeText(parsedReasoning)
+      setCopiedParsedReasoning(true)
+      setTimeout(() => setCopiedParsedReasoning(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [parsedReasoning])
+
+  const generateReasoningContext = useCallback(() => {
+    if (!state) return null
+
+    const parts: string[] = []
+
+    // [INITIAL SOKOBAN PROBLEM]
+    parts.push('='.repeat(60))
+    parts.push('[INITIAL SOKOBAN PROBLEM]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    parts.push('Grid (ASCII representation):')
+    parts.push('```')
+    parts.push(levelToAsciiWithCoords(state.level))
+    parts.push('```')
+    parts.push('')
+    parts.push(
+      'Legend: # = Wall, @ = Player, $ = Box, . = Goal, * = Box on Goal, + = Player on Goal',
+    )
+    parts.push('')
+    parts.push(`Grid size: ${state.level.width}x${state.level.height}`)
+    parts.push(`Boxes: ${state.level.boxStarts.length}`)
+    parts.push(`Goals: ${state.level.goals.length}`)
+    parts.push('')
+
+    // [AI NATIVE REASONING]
+    parts.push('='.repeat(60))
+    parts.push('[AI NATIVE REASONING]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    if (nativeReasoning) {
+      parts.push(nativeReasoning)
+    } else {
+      parts.push('(No native reasoning output from model)')
+    }
+    parts.push('')
+
+    // [FULL AI RESPONSE]
+    parts.push('='.repeat(60))
+    parts.push('[FULL AI RESPONSE]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    if (parsedReasoning) {
+      parts.push('Response Reasoning:')
+      parts.push(parsedReasoning)
+      parts.push('')
+    }
+    if (storedSolution.length > 0) {
+      parts.push(`Proposed Moves (${storedSolution.length} total):`)
+      parts.push(storedSolution.join(', '))
+      parts.push('')
+      parts.push(`Sokoban Notation: ${movesToNotation(storedSolution)}`)
+    } else {
+      parts.push('(No moves parsed from response)')
+    }
+    if (rawResponse) {
+      parts.push('')
+      parts.push('Raw Response:')
+      parts.push(rawResponse)
+    }
+    parts.push('')
+
+    // [AI SOLUTION RESULT]
+    parts.push('='.repeat(60))
+    parts.push('[AI SOLUTION RESULT]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    const successfulMoves = plannedMoves.filter((m) => m.status === 'success').length
+    const failedMove = plannedMoves.find((m) => m.status === 'failed')
+
+    if (state.isWon) {
+      parts.push(`SUCCESS: Puzzle solved in ${successfulMoves} moves`)
+    } else if (failedMove) {
+      const failedIndex = plannedMoves.indexOf(failedMove)
+      parts.push(`FAILURE: Invalid move at step ${failedIndex + 1}`)
+      parts.push(`- Failed move: ${failedMove.direction}`)
+      parts.push(`- Successful moves before failure: ${successfulMoves}`)
+    } else if (plannedMoves.length > 0 && successfulMoves === plannedMoves.length) {
+      parts.push(`INCOMPLETE: All ${successfulMoves} moves executed but puzzle not solved`)
+    } else if (error) {
+      parts.push(`ERROR: ${error}`)
+    } else {
+      parts.push('No solution attempt recorded')
+    }
+    parts.push('')
+
+    // [ACTUAL PUZZLE SOLUTION]
+    parts.push('='.repeat(60))
+    parts.push('[ACTUAL PUZZLE SOLUTION]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    const solverResult = solvePuzzle(state.level)
+    if (solverResult.solvable && solverResult.solution) {
+      parts.push(`Shortest Solution: ${solverResult.moveCount} moves`)
+      parts.push(`Moves: ${solverResult.solution.join(', ')}`)
+      parts.push(`Sokoban Notation: ${movesToNotation(solverResult.solution)}`)
+    } else if (solverResult.hitLimit) {
+      parts.push('Solver hit exploration limit - solution exists but could not be computed')
+    } else {
+      parts.push('No solution found by solver')
+    }
+    parts.push('')
+
+    // [INSTRUCTIONS]
+    parts.push('='.repeat(60))
+    parts.push('[INSTRUCTIONS]')
+    parts.push('='.repeat(60))
+    parts.push('')
+    parts.push(
+      'Above you have a Sokoban puzzle challenge and the full response from an AI model attempting to solve it, including any reasoning output.',
+    )
+    parts.push('')
+    parts.push(
+      'Your job is to review the AI response and evaluate its reasoning. DO NOT try to solve the problem yourself.',
+    )
+    parts.push('')
+    parts.push('Your goal is to identify critical flaws in the AI reasoning, if any:')
+    parts.push("- Hallucinations (describing moves or positions that don't exist)")
+    parts.push('- Physics/game rule violations (pushing through walls, pulling boxes, etc.)')
+    parts.push('- Invalid logic or contradictions')
+    parts.push('- Invalid moves (moving into walls, pushing boxes into walls, etc.)')
+    parts.push('- Failure to identify deadlock situations')
+    parts.push('- Incorrect spatial reasoning')
+    parts.push('')
+    parts.push(
+      'The actual solution has been provided above. All puzzles presented ARE solvable (even if the AI concludes they are impossible).',
+    )
+    parts.push('')
+    parts.push("Review the AI's reasoning and rate it on a scale of 1 to 100:")
+    parts.push('- 1-20: Complete failure (nonsensical, major rule violations)')
+    parts.push('- 21-40: Poor (significant errors, failed to solve)')
+    parts.push('- 41-60: Mediocre (some correct reasoning but key mistakes)')
+    parts.push('- 61-80: Good (mostly correct, minor issues)')
+    parts.push('- 81-95: Excellent (solved correctly with sound reasoning)')
+    parts.push('- 96-100: Exceptional (optimal solution with insightful reasoning)')
+
+    return parts.join('\n')
+  }, [state, nativeReasoning, parsedReasoning, storedSolution, rawResponse, plannedMoves, error])
+
+  const handleCopyReasoningContext = useCallback(async () => {
+    const context = generateReasoningContext()
+    if (!context) return
+    try {
+      await navigator.clipboard.writeText(context)
+      setCopiedReasoningContext(true)
+      setTimeout(() => setCopiedReasoningContext(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [generateReasoningContext])
+
   // Computed states
   const aiHasRun = plannedMoves.length > 0
+  const aiHasResponded = sessionMetrics.requestCount > 0
   const hasFailedMoves = plannedMoves.some((m) => m.status === 'failed')
   const aiCompleted = aiHasRun && !isRunning && state?.isWon && !hasFailedMoves
   const aiStopped = aiHasRun && !isRunning && (!state?.isWon || hasFailedMoves)
@@ -396,14 +580,14 @@ export function AIPanel({
         </div>
 
         {/* Model name when running or has run */}
-        {(isRunning || aiHasRun) && (
+        {(isRunning || aiHasRun || aiHasResponded) && (
           <div className="font-mono text-sm text-blue-400 truncate">
             {OPENROUTER_MODELS.find((m) => m.id === model)?.name ?? model}
           </div>
         )}
 
         {/* Session stats */}
-        {(isRunning || aiHasRun) && (
+        {(isRunning || aiHasRun || aiHasResponded) && (
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-md border px-2 py-1.5">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Cost</div>
@@ -502,6 +686,15 @@ export function AIPanel({
               <Button onClick={handleResetAI} variant="outline" className="w-full" size="sm">
                 Reset
               </Button>
+              <Button
+                onClick={handleCopyReasoningContext}
+                variant="outline"
+                className="w-full"
+                size="sm"
+              >
+                <Copy className="h-3 w-3 mr-1.5" />
+                {copiedReasoningContext ? 'Copied!' : 'Copy Reasoning Context'}
+              </Button>
             </>
           ) : aiStopped ? (
             <>
@@ -515,6 +708,15 @@ export function AIPanel({
               </Button>
               <Button onClick={handleResetAI} variant="outline" className="w-full" size="sm">
                 Reset
+              </Button>
+              <Button
+                onClick={handleCopyReasoningContext}
+                variant="outline"
+                className="w-full"
+                size="sm"
+              >
+                <Copy className="h-3 w-3 mr-1.5" />
+                {copiedReasoningContext ? 'Copied!' : 'Copy Reasoning Context'}
               </Button>
             </>
           ) : isRunning ? (
@@ -566,12 +768,50 @@ export function AIPanel({
           </div>
         )}
 
-        {/* AI Reasoning */}
-        {aiReasoning && (
+        {/* Native Reasoning (from models like DeepSeek R1) */}
+        {nativeReasoning && (
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">AI Reasoning</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Model Reasoning</Label>
+              <button
+                type="button"
+                onClick={handleCopyNativeReasoning}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy model reasoning"
+              >
+                {copiedNativeReasoning ? (
+                  <span className="text-[10px] text-green-400">Copied!</span>
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </button>
+            </div>
             <div className="border rounded-md p-2 text-xs text-foreground/80 bg-muted/30 max-h-32 overflow-y-auto whitespace-pre-wrap">
-              {aiReasoning}
+              {nativeReasoning}
+            </div>
+          </div>
+        )}
+
+        {/* Parsed Reasoning (from response content) */}
+        {parsedReasoning && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Response Reasoning</Label>
+              <button
+                type="button"
+                onClick={handleCopyParsedReasoning}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy response reasoning"
+              >
+                {copiedParsedReasoning ? (
+                  <span className="text-[10px] text-green-400">Copied!</span>
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </button>
+            </div>
+            <div className="border rounded-md p-2 text-xs text-foreground/80 bg-muted/30 max-h-32 overflow-y-auto whitespace-pre-wrap">
+              {parsedReasoning}
             </div>
           </div>
         )}

@@ -182,3 +182,62 @@ export function gameStateToAsciiWithCoords(state: GameState): string {
 
   return [header, ...numberedLines].join('\n')
 }
+
+/**
+ * Convert a level to ASCII representation using initial positions.
+ * Useful for showing the original puzzle state.
+ */
+export function levelToAscii(level: SokobanLevel): string {
+  const { playerStart, boxStarts } = level
+  const lines: string[] = []
+
+  for (let y = 0; y < level.height; y++) {
+    let line = ''
+    for (let x = 0; x < level.width; x++) {
+      const terrain = level.terrain[y]?.[x] || 'floor'
+      const isPlayer = playerStart.x === x && playerStart.y === y
+      const isBox = boxStarts.some((b) => b.x === x && b.y === y)
+      const isGoal = terrain === 'goal'
+
+      if (terrain === 'wall') {
+        line += '#'
+      } else if (isPlayer && isGoal) {
+        line += '+'
+      } else if (isPlayer) {
+        line += '@'
+      } else if (isBox && isGoal) {
+        line += '*'
+      } else if (isBox) {
+        line += '$'
+      } else if (isGoal) {
+        line += '.'
+      } else {
+        line += ' '
+      }
+    }
+    lines.push(line)
+  }
+
+  return lines.join('\n')
+}
+
+/**
+ * Convert a level to ASCII with coordinate labels using initial positions.
+ */
+export function levelToAsciiWithCoords(level: SokobanLevel): string {
+  const ascii = levelToAscii(level)
+  const lines = ascii.split('\n')
+
+  // Add column headers
+  let header = '   '
+  for (let x = 0; x < level.width; x++) {
+    header += x % 10
+  }
+
+  const numberedLines = lines.map((line, y) => {
+    const rowNum = y.toString().padStart(2, ' ')
+    return `${rowNum} ${line}`
+  })
+
+  return [header, ...numberedLines].join('\n')
+}

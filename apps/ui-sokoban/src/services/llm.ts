@@ -15,7 +15,10 @@ export function hasOpenRouterApiKey(): boolean {
 export interface LLMResponse {
   moves: MoveDirection[]
   rawResponse: string
-  reasoning?: string
+  /** Native reasoning from the model (e.g., DeepSeek R1 thinking output) */
+  nativeReasoning?: string
+  /** Reasoning parsed from the response content (e.g., from JSON "reasoning" field) */
+  parsedReasoning?: string
   inputTokens: number
   outputTokens: number
   cost: number
@@ -49,8 +52,13 @@ export async function getSokobanSolution(
     })
 
     const durationMs = Date.now() - startTime
-    const content = response.choices[0]?.message?.content ?? ''
+    const message = response.choices[0]?.message
+    const content = message?.content ?? ''
     const usage = response.usage
+
+    // Extract native reasoning from OpenRouter response (some models like DeepSeek provide this)
+    // @ts-expect-error - OpenRouter-specific field not in OpenAI types
+    const nativeReasoning = message?.reasoning as string | undefined
 
     const parsed = parseAIResponse(content)
 
@@ -62,7 +70,8 @@ export async function getSokobanSolution(
     return {
       moves: parsed.moves,
       rawResponse: content,
-      reasoning: parsed.reasoning,
+      nativeReasoning: nativeReasoning || undefined,
+      parsedReasoning: parsed.reasoning,
       inputTokens,
       outputTokens,
       cost,
@@ -110,8 +119,13 @@ export async function getNextMove(
     })
 
     const durationMs = Date.now() - startTime
-    const content = response.choices[0]?.message?.content ?? ''
+    const message = response.choices[0]?.message
+    const content = message?.content ?? ''
     const usage = response.usage
+
+    // Extract native reasoning from OpenRouter response (some models like DeepSeek provide this)
+    // @ts-expect-error - OpenRouter-specific field not in OpenAI types
+    const nativeReasoning = message?.reasoning as string | undefined
 
     const parsed = parseAIResponse(content)
 
@@ -122,6 +136,8 @@ export async function getNextMove(
     return {
       moves: parsed.moves.slice(0, 1), // Only take first move
       rawResponse: content,
+      nativeReasoning: nativeReasoning || undefined,
+      parsedReasoning: parsed.reasoning,
       inputTokens,
       outputTokens,
       cost,

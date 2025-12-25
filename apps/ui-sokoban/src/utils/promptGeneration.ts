@@ -130,14 +130,28 @@ export function generateSokobanPrompt(state: GameState, options: PromptOptions):
   if (options.executionMode === 'fullSolution') {
     parts.push('Provide a complete solution to move all boxes onto goals.')
     parts.push('')
+    parts.push('In your reasoning, explain your solution strategy step-by-step:')
+    parts.push('1. Identify which box should be moved to which goal and in what order')
+    parts.push(
+      '2. Explain why this order avoids deadlocks (boxes stuck in corners or against walls)',
+    )
+    parts.push(
+      '3. Describe the path for each box, noting any boxes that need to be moved out of the way first',
+    )
+    parts.push('4. Mention any critical moves where the player needs to reposition')
+    parts.push('')
     parts.push('Return ONLY a JSON object in this exact format (no other text):')
     parts.push(
-      '{"reasoning":"<your step-by-step reasoning here>","moves":["UP","RIGHT","DOWN","LEFT"]}',
+      '{"reasoning":"<detailed step-by-step strategy explanation>","moves":["UP","RIGHT","DOWN","LEFT"]}',
     )
     parts.push('')
     parts.push('Valid moves: UP, DOWN, LEFT, RIGHT')
   } else {
     parts.push('Provide the next single move.')
+    parts.push('')
+    parts.push('In your reasoning, briefly explain:')
+    parts.push('- What is the immediate goal of this move?')
+    parts.push('- How does it contribute to the overall solution?')
     parts.push('')
     parts.push('Return ONLY a JSON object in this exact format (no other text):')
     parts.push('{"reasoning":"<brief reasoning for this move>","move":"UP"}')

@@ -152,10 +152,10 @@ export function gameStateToAscii(state: GameState): string {
       } else if (isGoal) {
         line += '.'
       } else {
-        line += ' '
+        line += '-'
       }
     }
-    lines.push(line)
+    lines.push(`${line}|`)
   }
 
   return lines.join('\n')
@@ -169,11 +169,12 @@ export function gameStateToAsciiWithCoords(state: GameState): string {
   const ascii = gameStateToAscii(state)
   const lines = ascii.split('\n')
 
-  // Add column headers
+  // Add column headers (with | to match row end markers)
   let header = '   '
   for (let x = 0; x < level.width; x++) {
     header += x % 10
   }
+  header += '|'
 
   const numberedLines = lines.map((line, y) => {
     const rowNum = y.toString().padStart(2, ' ')
@@ -212,10 +213,10 @@ export function levelToAscii(level: SokobanLevel): string {
       } else if (isGoal) {
         line += '.'
       } else {
-        line += ' '
+        line += '-'
       }
     }
-    lines.push(line)
+    lines.push(`${line}|`)
   }
 
   return lines.join('\n')
@@ -228,11 +229,12 @@ export function levelToAsciiWithCoords(level: SokobanLevel): string {
   const ascii = levelToAscii(level)
   const lines = ascii.split('\n')
 
-  // Add column headers
+  // Add column headers (with | to match row end markers)
   let header = '   '
   for (let x = 0; x < level.width; x++) {
     header += x % 10
   }
+  header += '|'
 
   const numberedLines = lines.map((line, y) => {
     const rowNum = y.toString().padStart(2, ' ')

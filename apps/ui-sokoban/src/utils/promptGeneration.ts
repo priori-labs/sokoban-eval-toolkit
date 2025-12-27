@@ -51,7 +51,7 @@ function applyCipherSymbols(ascii: string): string {
     .replace(/\./g, CIPHER_MAP.goal)
     .replace(/\*/g, CIPHER_MAP.boxOnGoal)
     .replace(/\+/g, CIPHER_MAP.playerOnGoal)
-    .replace(/ /g, CIPHER_MAP.floor)
+    .replace(/-/g, CIPHER_MAP.floor)
 }
 
 /**
@@ -81,7 +81,7 @@ export function generateSokobanPrompt(state: GameState, options: PromptOptions):
         goal: '.',
         boxOnGoal: '*',
         playerOnGoal: '+',
-        floor: '(space)',
+        floor: '-',
       }
 
   // Header
@@ -117,6 +117,7 @@ export function generateSokobanPrompt(state: GameState, options: PromptOptions):
     parts.push(`- ${symbols.boxOnGoal} = Box on Goal`)
     parts.push(`- ${symbols.playerOnGoal} = Player on Goal`)
     parts.push(`- ${symbols.floor} = Floor`)
+    parts.push('- | = Row boundary (end of each row)')
     parts.push('')
   }
 

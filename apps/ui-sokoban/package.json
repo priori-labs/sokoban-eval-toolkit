@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tsc": "tsc --noEmit",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "benchmark": "bun run scripts/benchmark-solver.ts"
   },
   "dependencies": {
     "@sokoban-eval-toolkit/ui-library": "workspace:*",

@@ -1,4 +1,8 @@
-import { createOpenRouterClient } from '@sokoban-eval-toolkit/utils'
+import {
+  type ReasoningEffort,
+  createOpenRouterClient,
+  supportsReasoningEffort,
+} from '@sokoban-eval-toolkit/utils'
 import type { GameState, MoveDirection, PromptOptions, SessionMetrics } from '@src/types'
 import { generateMoveByMovePrompt, generateSokobanPrompt } from '@src/utils/promptGeneration'
 import { parseAIResponse } from '@src/utils/solutionValidator'
@@ -33,6 +37,7 @@ export async function getSokobanSolution(
   state: GameState,
   model: string,
   options: PromptOptions,
+  reasoningEffort?: ReasoningEffort,
 ): Promise<LLMResponse> {
   const startTime = Date.now()
 
@@ -45,11 +50,22 @@ export async function getSokobanSolution(
 
     const prompt = generateSokobanPrompt(state, options)
 
-    const response = await client.chat.completions.create({
+    // Build request params, conditionally adding reasoning_effort for supported models
+    const baseParams = {
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user' as const, content: prompt }],
       temperature: 0.3,
-    })
+    }
+
+    // Add reasoning_effort for models that support it (OpenAI o1/o3/GPT-5, Gemini 3)
+    const requestParams =
+      reasoningEffort && supportsReasoningEffort(model)
+        ? { ...baseParams, reasoning_effort: reasoningEffort }
+        : baseParams
+
+    // Cast to any to allow reasoning_effort which is an OpenRouter extension
+    // biome-ignore lint/suspicious/noExplicitAny: OpenRouter extension field not in OpenAI types
+    const response = await client.chat.completions.create(requestParams as any)
 
     const durationMs = Date.now() - startTime
     const message = response.choices[0]?.message
@@ -57,8 +73,8 @@ export async function getSokobanSolution(
     const usage = response.usage
 
     // Extract native reasoning from OpenRouter response (some models like DeepSeek provide this)
-    // @ts-expect-error - OpenRouter-specific field not in OpenAI types
-    const nativeReasoning = message?.reasoning as string | undefined
+    // biome-ignore lint/suspicious/noExplicitAny: OpenRouter-specific field not in OpenAI types
+    const nativeReasoning = (message as any)?.reasoning as string | undefined
 
     const parsed = parseAIResponse(content)
 

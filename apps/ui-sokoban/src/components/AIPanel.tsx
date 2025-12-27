@@ -15,7 +15,12 @@ import {
   SelectValue,
 } from '@sokoban-eval-toolkit/ui-library/components/select'
 import { Separator } from '@sokoban-eval-toolkit/ui-library/components/separator'
-import { OPENROUTER_MODELS } from '@sokoban-eval-toolkit/utils'
+import { Slider } from '@sokoban-eval-toolkit/ui-library/components/slider'
+import {
+  OPENROUTER_MODELS,
+  type ReasoningEffort,
+  supportsReasoningEffort,
+} from '@sokoban-eval-toolkit/utils'
 import { AI_MOVE_DELAY } from '@src/constants'
 import {
   createSessionMetrics,
@@ -64,6 +69,7 @@ export function AIPanel({
 }: AIPanelProps) {
   const [model, setModel] = useState(DEFAULT_MODEL)
   const [promptOptions, setPromptOptions] = useState<PromptOptions>(DEFAULT_PROMPT_OPTIONS)
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium')
 
   const [isRunning, setIsRunning] = useState(false)
   const [plannedMoves, setPlannedMoves] = useState<ExtendedPlannedMove[]>([])
@@ -205,8 +211,13 @@ export function AIPanel({
 
     setInflightStartTime(Date.now())
 
-    // Get solution from LLM
-    const response = await getSokobanSolution(state, model, promptOptions)
+    // Get solution from LLM (pass reasoning effort for supported models)
+    const response = await getSokobanSolution(
+      state,
+      model,
+      promptOptions,
+      supportsReasoningEffort(model) ? reasoningEffort : undefined,
+    )
 
     setInflightStartTime(null)
 
@@ -248,7 +259,7 @@ export function AIPanel({
     setTimeout(() => {
       executeNextMove()
     }, 300)
-  }, [state, isRunning, model, promptOptions, onReset, executeNextMove])
+  }, [state, isRunning, model, promptOptions, reasoningEffort, onReset, executeNextMove])
 
   const handleStop = useCallback(() => {
     abortRef.current = true
@@ -629,6 +640,33 @@ export function AIPanel({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        )}
+
+        {/* Reasoning effort slider - only show for models that support it */}
+        {!isRunning && plannedMoves.length === 0 && supportsReasoningEffort(model) && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Reasoning Level</Label>
+              <span className="text-xs text-muted-foreground capitalize">{reasoningEffort}</span>
+            </div>
+            <Slider
+              value={[reasoningEffort === 'low' ? 0 : reasoningEffort === 'medium' ? 1 : 2]}
+              onValueChange={(value) => {
+                const levels: ReasoningEffort[] = ['low', 'medium', 'high']
+                setReasoningEffort(levels[value[0] ?? 1] ?? 'medium')
+              }}
+              min={0}
+              max={2}
+              step={1}
+              disabled={disabled || !hasApiKey}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Low</span>
+              <span>Medium</span>
+              <span>High</span>
+            </div>
           </div>
         )}
 

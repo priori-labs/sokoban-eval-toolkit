@@ -148,13 +148,14 @@ export function AIPanel({
   }, [levelId, onInferenceTimeChange])
 
   // Load solution when level changes (cache first, then solver)
+  // Skip when variant rules are enabled (solver doesn't apply)
   useEffect(() => {
-    if (!state?.level) {
+    if (!state?.level || isVariantRules) {
       setCachedSolution(null)
       return
     }
     getSolution(state.level).then(setCachedSolution)
-  }, [state?.level])
+  }, [state?.level, isVariantRules])
 
   // Notify parent of inference time changes
   useEffect(() => {

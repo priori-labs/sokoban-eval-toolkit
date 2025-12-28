@@ -117,6 +117,14 @@ export function generateSokobanPrompt(state: GameState, options: PromptOptions):
       `- **Win condition**: Reach the Player Goal (${symbols.playerGoal}) - boxes do NOT need to be on any locations`,
     )
     parts.push('')
+    parts.push('### Example: Neutralizing a Trap')
+    parts.push(
+      `Before (player pushes box LEFT onto trap): ${symbols.wall}-${symbols.goal}${symbols.box}${symbols.player}-${symbols.wall}`,
+    )
+    parts.push(
+      `After (box and trap both disappear):       ${symbols.wall}--${symbols.player}--${symbols.wall}`,
+    )
+    parts.push('')
   } else {
     parts.push('# Sokoban Puzzle')
     parts.push('')

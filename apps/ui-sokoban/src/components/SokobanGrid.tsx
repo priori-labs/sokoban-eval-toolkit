@@ -53,9 +53,14 @@ export function SokobanGrid({
 
   const isBox = (x: number, y: number) => boxes.some((b) => b.x === x && b.y === y)
 
-  const isBoxOnGoal = (x: number, y: number) => isBox(x, y) && level.terrain[y]?.[x] === 'goal'
+  // Check if a trap has been neutralized (box pushed onto it, both disappeared)
+  const isNeutralizedTrap = (x: number, y: number) =>
+    state.neutralizedTraps.some((t) => t.x === x && t.y === y)
 
-  const isGoal = (x: number, y: number) => level.terrain[y]?.[x] === 'goal'
+  const isGoal = (x: number, y: number) =>
+    level.terrain[y]?.[x] === 'goal' && !isNeutralizedTrap(x, y)
+
+  const isBoxOnGoal = (x: number, y: number) => isBox(x, y) && isGoal(x, y)
 
   const isPlayer = (x: number, y: number) => playerPos.x === x && playerPos.y === y
 
@@ -183,7 +188,7 @@ export function SokobanGrid({
                 {/* Player goal marker (star shape) */}
                 {cellIsPlayerGoal && !cellIsPlayer && (
                   <div
-                    className="absolute flex items-center justify-center opacity-70"
+                    className="absolute flex items-center justify-center"
                     style={{
                       inset: 6,
                       boxShadow: isSelectedPlayerGoal
@@ -192,29 +197,19 @@ export function SokobanGrid({
                       borderRadius: '4px',
                     }}
                   >
-                    <div className="text-lg" style={{ color: 'hsl(var(--sokoban-player-goal))' }}>
-                      ★
-                    </div>
-                  </div>
-                )}
-
-                {/* Player goal hint when player is on it */}
-                {cellIsPlayerGoal && cellIsPlayer && (
-                  <div
-                    className="absolute flex items-center justify-center pointer-events-none"
-                    style={{
-                      inset: 0,
-                      zIndex: 10,
-                    }}
-                  >
                     <div
-                      className="text-[10px] font-bold"
-                      style={{ color: 'white', textShadow: '0 0 2px black' }}
+                      className="text-xl"
+                      style={{
+                        color: 'hsl(var(--sokoban-player-goal))',
+                        textShadow: '0 0 4px hsl(var(--sokoban-player-goal) / 0.5)',
+                      }}
                     >
                       ★
                     </div>
                   </div>
                 )}
+
+                {/* Player goal hint when player is on it - removed, handled in player rendering */}
 
                 {/* Goal hint when covered by player */}
                 {cellIsGoal && cellIsPlayer && (
@@ -251,20 +246,41 @@ export function SokobanGrid({
                 {/* Player */}
                 {cellIsPlayer && (
                   <div
-                    className="absolute rounded-full flex items-center justify-center shadow-lg"
+                    className={`absolute rounded-full flex items-center justify-center shadow-lg ${
+                      cellIsPlayerGoal ? 'animate-pulse-glow' : ''
+                    }`}
                     style={{
-                      inset: 4,
+                      inset: cellIsPlayerGoal ? 2 : 4,
                       backgroundColor: 'hsl(var(--sokoban-player))',
                       border: isSelectedPlayer
                         ? '3px solid #facc15'
-                        : '3px solid hsl(var(--sokoban-player) / 0.5)',
-                      boxShadow: isSelectedPlayer ? '0 0 8px #facc15' : undefined,
+                        : cellIsPlayerGoal
+                          ? '3px solid hsl(var(--sokoban-player-goal))'
+                          : '3px solid hsl(var(--sokoban-player) / 0.5)',
+                      boxShadow: isSelectedPlayer
+                        ? '0 0 8px #facc15'
+                        : cellIsPlayerGoal
+                          ? '0 0 12px hsl(var(--sokoban-player-goal)), 0 0 20px hsl(var(--sokoban-player-goal) / 0.5)'
+                          : undefined,
                     }}
                   >
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: 'hsl(var(--sokoban-player) / 0.3)' }}
-                    />
+                    {cellIsPlayerGoal ? (
+                      <div
+                        className="text-base font-bold"
+                        style={{
+                          color: 'hsl(var(--sokoban-player-goal))',
+                          textShadow:
+                            '0 0 4px hsl(var(--sokoban-player-goal)), 0 0 8px hsl(var(--sokoban-player-goal) / 0.8)',
+                        }}
+                      >
+                        ★
+                      </div>
+                    ) : (
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: 'hsl(var(--sokoban-player) / 0.3)' }}
+                      />
+                    )}
                   </div>
                 )}
               </div>

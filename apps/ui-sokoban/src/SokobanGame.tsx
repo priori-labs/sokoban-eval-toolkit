@@ -977,7 +977,7 @@ export function SokobanGame() {
             <div className="mt-3 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-2 text-center">
               <div className="text-green-500 font-medium text-sm">
                 Completed in {gameState.moveHistory.length} moves
-                {currentLevel?.optimalMoves && (
+                {currentLevel?.optimalMoves && !isVariantRules && (
                   <span className="text-green-400/80"> (optimal: {currentLevel.optimalMoves})</span>
                 )}
               </div>
@@ -1002,6 +1002,18 @@ export function SokobanGame() {
                   {currentLevel.generationIterations !== 1 ? 's' : ''}
                 </>
               )}
+            </div>
+          )}
+
+          {/* Variant mode info */}
+          {isVariantRules && (
+            <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-md px-4 py-2 text-[11px] text-amber-600 dark:text-amber-400 max-w-xs">
+              <div className="font-medium mb-1 text-center">Variant Mode Active</div>
+              <ul className="space-y-0.5 text-amber-500/80">
+                <li>• Goals become traps (deadly to player)</li>
+                <li>• Push boxes onto traps to neutralize them</li>
+                <li>• Reach the Player Goal to win</li>
+              </ul>
             </div>
           )}
         </div>

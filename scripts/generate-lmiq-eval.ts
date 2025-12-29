@@ -587,12 +587,14 @@ export const LMIQ_REASONING_EASY_LEVELS_RAW = \`${asciiLevels.join('\n\n')}\`
 
   console.log(`\nSplit: ${trainLevels.length} train, ${testLevels.length} test`)
 
-  // Generate train entries (with solutions)
-  const trainEntries: string[] = []
+  // Generate train entries
+  const trainBaseEntries: string[] = []
+  const trainWithSolutionsEntries: string[] = []
   for (let i = 0; i < trainLevels.length; i++) {
     const level = trainLevels[i]
     const puzzleId = `lmiq_train_${level.width}x${level.height}_${String(i).padStart(3, '0')}`
-    trainEntries.push(JSON.stringify(generateTrainEntry(level, puzzleId)))
+    trainBaseEntries.push(JSON.stringify(generateTestEntry(level, puzzleId))) // No solution
+    trainWithSolutionsEntries.push(JSON.stringify(generateTrainEntry(level, puzzleId))) // With solution
   }
 
   // Generate test entries (without solutions - for LLM evaluation)
@@ -603,17 +605,22 @@ export const LMIQ_REASONING_EASY_LEVELS_RAW = \`${asciiLevels.join('\n\n')}\`
     testEntries.push(JSON.stringify(generateTestEntry(level, puzzleId)))
   }
 
-  // Write train.jsonl (with solutions)
+  // Write train.jsonl (base - no solutions, for LLM to solve)
   const trainPath = resolve(dataDir, 'train.jsonl')
-  await writeFile(trainPath, `${trainEntries.join('\n')}\n`)
+  await writeFile(trainPath, `${trainBaseEntries.join('\n')}\n`)
+
+  // Write train_with_solutions.jsonl (with programmatic solutions)
+  const trainWithSolutionsPath = resolve(dataDir, 'train_with_solutions.jsonl')
+  await writeFile(trainWithSolutionsPath, `${trainWithSolutionsEntries.join('\n')}\n`)
 
   // Write test.jsonl (without solutions)
   const testPath = resolve(dataDir, 'test.jsonl')
   await writeFile(testPath, `${testEntries.join('\n')}\n`)
 
   console.log('\nJSONL files written:')
-  console.log(`  Train: ${trainPath} (${trainLevels.length} puzzles)`)
-  console.log(`  Test:  ${testPath} (${testLevels.length} puzzles)`)
+  console.log(`  Train (base):           ${trainPath} (${trainLevels.length} puzzles)`)
+  console.log(`  Train (with solutions): ${trainWithSolutionsPath} (${trainLevels.length} puzzles)`)
+  console.log(`  Test:                   ${testPath} (${testLevels.length} puzzles)`)
 
   // Print stats
   const stats = {

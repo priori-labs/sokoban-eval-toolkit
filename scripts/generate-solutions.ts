@@ -33,7 +33,6 @@ import pLimit from 'p-limit'
 // Constants
 // ============================================================================
 
-const TEMPERATURE = 0.3
 const DEFAULT_MAX_RETRIES = 3
 
 // ============================================================================
@@ -321,15 +320,20 @@ async function generateSolution(
   const startTime = Date.now()
 
   try {
-    const messages = entry.messages.map((m) => ({
-      role: m.role as 'system' | 'user' | 'assistant',
-      content: m.content,
-    }))
+    // Flatten system message into user message for better model compatibility
+    const systemMsg = entry.messages.find((m) => m.role === 'system')
+    const userMsg = entry.messages.find((m) => m.role === 'user')
 
+    const combinedContent = systemMsg
+      ? `${systemMsg.content}\n\n${userMsg?.content || ''}`
+      : userMsg?.content || ''
+
+    const messages = [{ role: 'user' as const, content: combinedContent }]
+
+    // Some models/providers don't support temperature, so we omit it for safety
     const response = await client.chat.completions.create({
       model,
       messages,
-      temperature: TEMPERATURE,
     })
 
     const durationMs = Date.now() - startTime
@@ -356,6 +360,23 @@ async function generateSolution(
     }
   } catch (error) {
     const durationMs = Date.now() - startTime
+    let errorMessage = 'Unknown error'
+    if (error instanceof Error) {
+      errorMessage = error.message
+      // Try to extract more details from OpenAI-style errors
+      // biome-ignore lint/suspicious/noExplicitAny: Error may have extra fields
+      const anyError = error as any
+      if (anyError.status) {
+        errorMessage = `${anyError.status}: ${error.message}`
+      }
+      if (anyError.error?.message) {
+        errorMessage = `${anyError.status || 'Error'}: ${anyError.error.message}`
+      }
+      // Log full error for debugging
+      if (process.env.DEBUG) {
+        console.error('Full error:', JSON.stringify(anyError, null, 2))
+      }
+    }
     return {
       response: '',
       inputTokens: 0,
@@ -363,7 +384,7 @@ async function generateSolution(
       reasoningTokens: 0,
       cost: 0,
       durationMs,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
     }
   }
 }
@@ -401,7 +422,7 @@ async function processOneEntry(
   // Try primary model up to maxRetries times
   for (let i = 0; i < maxRetries; i++) {
     attempts++
-    log(`Attempt ${attempts}/${maxRetries} with primary model...`)
+    log(`Attempt ${attempts}/${maxRetries} with primary model (${model})...`)
     const result = await generateSolution(client, entry, model)
 
     totalCost += result.cost
@@ -415,6 +436,10 @@ async function processOneEntry(
 
     if (result.error) {
       log(`API error: ${result.error}`)
+      // Wait before retry to avoid rate limits
+      if (i < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
       continue
     }
 
@@ -465,7 +490,7 @@ async function processOneEntry(
   if (fallbackModel) {
     usedFallback = true
     attempts++
-    log('Trying fallback model...')
+    log(`Trying fallback model (${fallbackModel})...`)
     const result = await generateSolution(client, entry, fallbackModel)
 
     totalCost += result.cost
@@ -639,7 +664,7 @@ async function promptForConfig(): Promise<GenerationConfig> {
   console.log('✓  OpenRouter API key found\n')
 
   // Input file
-  const defaultInput = 'data/raw/test.jsonl'
+  const defaultInput = 'data/raw/train.jsonl'
   const inputFile = await input({
     message: 'Input JSONL file:',
     default: defaultInput,
@@ -797,9 +822,10 @@ async function main(): Promise<void> {
       : 'None'
 
     console.log('\n📋 Configuration:')
-    console.log(`   Primary Model: ${modelName}`)
-    console.log(`   Fallback Model: ${fallbackName}`)
-    console.log(`   Temperature: ${TEMPERATURE}`)
+    console.log(`   Primary Model: ${modelName} (${config.model})`)
+    console.log(
+      `   Fallback Model: ${fallbackName}${config.fallbackModel ? ` (${config.fallbackModel})` : ''}`,
+    )
     console.log(`   Max Retries: ${config.maxRetries}`)
     console.log(`   Input: ${config.inputFile}`)
     console.log(`   Output: ${config.outputFile}`)

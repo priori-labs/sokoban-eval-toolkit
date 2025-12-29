@@ -52,9 +52,9 @@ tasks:
       - bun run scripts/benchmark-solver.ts
 
   lmiq:
-    desc: Generate LMIQ Reasoning Easy eval set (100 puzzles)
+    desc: Generate LMIQ eval set (interactive CLI)
     cmds:
-      - bun run scripts/generate-lmiq-eval.ts {{.CLI_ARGS}}
+      - bun run scripts/generate-lmiq-eval.ts
 
   solutions:
     desc: Generate reasoning solutions for puzzles using LLM

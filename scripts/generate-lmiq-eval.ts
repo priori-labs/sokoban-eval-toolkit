@@ -1,20 +1,22 @@
+#!/usr/bin/env bun
+
 /**
- * Generate LMIQ Reasoning Easy eval set.
+ * Generate LMIQ Reasoning eval sets with interactive CLI.
  *
- * Distribution (percentages of total):
- * - 20% have 1 box
- * - 25% have 2 boxes
- * - 30% have 3 boxes
- * - 25% have 4 boxes
+ * Difficulty presets:
+ * - Very Easy: 5x5/6x6, 1 box only
+ * - Easy: 4x4-10x10, 40% 1-box, 35% 2-box, 25% 3-box
+ * - Custom: User-defined distribution
  *
- * Board sizes: 4x4 to 10x10 (random)
- *
- * Usage: bun run scripts/generate-lmiq-eval.ts [count]
- * Default count is 100.
+ * Usage: bun run scripts/generate-lmiq-eval.ts
  */
 
+import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+
+import { ExitPromptError } from '@inquirer/core'
+import { confirm, input, select } from '@inquirer/prompts'
 
 import type {
   CellTerrain,
@@ -23,6 +25,36 @@ import type {
   SokobanLevel,
 } from '../apps/ui-sokoban/src/types'
 import { solvePuzzle } from '../apps/ui-sokoban/src/utils/sokobanSolver'
+
+// ============================================================================
+// Types
+// ============================================================================
+
+type DifficultyPreset = 'very-easy' | 'standard' | 'custom'
+
+/**
+ * Difficulty level configuration:
+ * - veryEasy: 1 box/goal, small board (5x5/6x6), NO internal walls
+ * - easy: 1 box/goal, larger board (4x10), WITH walls
+ * - medium: 2 boxes/goals, WITH walls
+ * - hard: 3 boxes/goals, WITH walls
+ * - veryHard: 4 boxes/goals, WITH walls
+ */
+interface DifficultyDistribution {
+  veryEasy: number // 1 box, small, no walls
+  easy: number // 1 box, larger, walls
+  medium: number // 2 boxes, walls
+  hard: number // 3 boxes, walls
+  veryHard: number // 4 boxes, walls
+}
+
+interface GenerationConfig {
+  preset: DifficultyPreset
+  totalCount: number
+  distribution: DifficultyDistribution
+  outputDir: string
+  trainTestSplit: number // percentage for test set (0-100)
+}
 
 interface GeneratedLevel {
   width: number
@@ -135,12 +167,31 @@ function shuffle<T>(array: T[]): T[] {
 }
 
 /**
- * Generate a level with the specified number of boxes.
+ * Generate a short hash ID from puzzle ASCII.
+ * Returns an 8-character hex string.
  */
-function generateLevel(numBoxes: number, maxAttempts = 1000): GeneratedLevel | null {
+function hashPuzzle(asciiLines: string[]): string {
+  const content = asciiLines.join('\n')
+  return createHash('sha256').update(content).digest('hex').slice(0, 8)
+}
+
+interface LevelGenOptions {
+  numBoxes: number
+  minSize: number
+  maxSize: number
+  withWalls: boolean
+  maxAttempts?: number
+}
+
+/**
+ * Generate a level with the specified options.
+ */
+function generateLevel(options: LevelGenOptions): GeneratedLevel | null {
+  const { numBoxes, minSize, maxSize, withWalls, maxAttempts = 1000 } = options
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // Random size 4-10
-    const size = randomInt(4, 10)
+    // Random size within range
+    const size = randomInt(minSize, maxSize)
     const width = size
     const height = size
 
@@ -158,8 +209,8 @@ function generateLevel(numBoxes: number, maxAttempts = 1000): GeneratedLevel | n
       terrain.push(row)
     }
 
-    // For larger grids, add some sparse internal walls
-    if (size >= 6 && numBoxes > 0) {
+    // Add sparse internal walls if enabled and board is large enough
+    if (withWalls && size >= 6 && numBoxes > 0) {
       const interiorPositions: Position[] = []
       for (let y = 2; y < height - 2; y++) {
         for (let x = 2; x < width - 2; x++) {
@@ -167,11 +218,11 @@ function generateLevel(numBoxes: number, maxAttempts = 1000): GeneratedLevel | n
         }
       }
 
-      const maxWalls = Math.min(Math.floor(interiorPositions.length * 0.1), 5)
-      const numWalls = randomInt(0, maxWalls)
+      const maxWallCount = Math.min(Math.floor(interiorPositions.length * 0.1), 5)
+      const numWallsToAdd = randomInt(0, maxWallCount)
 
       const shuffled = shuffle(interiorPositions)
-      for (let i = 0; i < numWalls && i < shuffled.length; i++) {
+      for (let i = 0; i < numWallsToAdd && i < shuffled.length; i++) {
         const pos = shuffled[i]
         terrain[pos.y][pos.x] = 'wall'
       }
@@ -388,14 +439,24 @@ function solutionToNotation(solution: MoveDirection[]): string {
     .join('')
 }
 
+type DifficultyLevel = 'very-easy' | 'easy' | 'medium' | 'hard' | 'very-hard'
+
 /**
- * Get difficulty label based on number of boxes.
+ * Get difficulty label for display.
  */
-function getDifficulty(numBoxes: number): string {
-  if (numBoxes <= 1) return 'easy'
-  if (numBoxes <= 2) return 'easy-medium'
-  if (numBoxes <= 3) return 'medium'
-  return 'medium-hard'
+function getDifficultyLabel(difficulty: DifficultyLevel): string {
+  switch (difficulty) {
+    case 'very-easy':
+      return 'Very Easy'
+    case 'easy':
+      return 'Easy'
+    case 'medium':
+      return 'Medium'
+    case 'hard':
+      return 'Hard'
+    case 'very-hard':
+      return 'Very Hard'
+  }
 }
 
 /**
@@ -429,7 +490,11 @@ function generateCoordinates(level: GeneratedLevel): string {
 /**
  * Generate JSONL entry for training (includes assistant response).
  */
-function generateTrainEntry(level: GeneratedLevel, puzzleId: string): Record<string, unknown> {
+function generateTrainEntry(
+  level: GeneratedLevel & { id: string },
+  puzzleId: string,
+  difficulty: DifficultyLevel,
+): Record<string, unknown> {
   const puzzleArray = levelToAsciiArray(level)
   const puzzleStr = puzzleArray.join('\n')
   const solutionNotation = solutionToNotation(level.solution)
@@ -451,8 +516,9 @@ Example solution: UUDLRRRDLR`
   const assistantResponse = `Solution: ${solutionNotation}`
 
   return {
+    id: level.id,
     puzzle_id: puzzleId,
-    difficulty: getDifficulty(level.numBoxes),
+    difficulty,
     puzzle: puzzleArray,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -465,7 +531,11 @@ Example solution: UUDLRRRDLR`
 /**
  * Generate JSONL entry for testing (no assistant response).
  */
-function generateTestEntry(level: GeneratedLevel, puzzleId: string): Record<string, unknown> {
+function generateTestEntry(
+  level: GeneratedLevel & { id: string },
+  puzzleId: string,
+  difficulty: DifficultyLevel,
+): Record<string, unknown> {
   const puzzleArray = levelToAsciiArray(level)
   const puzzleStr = puzzleArray.join('\n')
   const coordinates = generateCoordinates(level)
@@ -484,8 +554,9 @@ Provide moves as: U (up), D (down), L (left), R (right).
 Example solution: UUDLRRRDLR`
 
   return {
+    id: level.id,
     puzzle_id: puzzleId,
-    difficulty: getDifficulty(level.numBoxes),
+    difficulty,
     puzzle: puzzleArray,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -495,154 +566,462 @@ Example solution: UUDLRRRDLR`
 }
 
 // ============================================================================
-// MAIN
+// CLI Prompts
 // ============================================================================
 
-async function main() {
-  const totalCount = Number.parseInt(process.argv[2] || '100', 10)
+async function promptForConfig(): Promise<GenerationConfig> {
+  console.log('\n🧩 LMIQ Eval Generator\n')
 
-  console.log(`Generating ${totalCount} LMIQ Reasoning Easy puzzles...`)
+  // Difficulty preset selection
+  const preset = (await select({
+    message: 'Select difficulty preset:',
+    choices: [
+      {
+        name: 'Very Easy Only - 5x5/6x6 boards, 1 box, no walls (baseline testing)',
+        value: 'very-easy',
+      },
+      {
+        name: 'Standard Eval - Mixed difficulties (25/25/25/20/5%)',
+        value: 'standard',
+      },
+      {
+        name: 'Custom - Define your own distribution',
+        value: 'custom',
+      },
+    ],
+  })) as DifficultyPreset
 
-  // Calculate counts based on percentages
-  const distribution = {
-    boxes1: Math.round(totalCount * 0.4), // 40% - 1 box
-    boxes2: Math.round(totalCount * 0.35), // 35% - 2 boxes
-    boxes3: Math.round(totalCount * 0.25), // 25% - 3 boxes
-    boxes4: Math.round(totalCount * 0.0), // 0% - 4 boxes
-  }
-
-  // Adjust for rounding errors
-  const sum = distribution.boxes1 + distribution.boxes2 + distribution.boxes3 + distribution.boxes4
-  if (sum < totalCount) {
-    distribution.boxes1 += totalCount - sum
-  }
-
-  console.log('Distribution:', distribution)
-
-  const levels: GeneratedLevel[] = []
-
-  // Generate puzzles for each category
-  const categories: [number, number][] = [
-    [1, distribution.boxes1],
-    [2, distribution.boxes2],
-    [3, distribution.boxes3],
-    [4, distribution.boxes4],
-  ]
-
-  for (const [numBoxes, count] of categories) {
-    console.log(`Generating ${count} puzzles with ${numBoxes} boxes...`)
-
-    for (let i = 0; i < count; i++) {
-      const level = generateLevel(numBoxes)
-      if (level) {
-        levels.push(level)
-      } else {
-        console.warn(`Failed to generate puzzle with ${numBoxes} boxes (attempt ${i + 1})`)
-        // Try again
-        const retry = generateLevel(numBoxes, 5000)
-        if (retry) {
-          levels.push(retry)
-        } else {
-          console.error('Failed to generate puzzle after extended attempts')
-        }
+  // Total count
+  const countStr = await input({
+    message: 'Number of puzzles to generate:',
+    default: '100',
+    validate: (value) => {
+      const num = Number.parseInt(value, 10)
+      if (Number.isNaN(num) || num < 1 || num > 10000) {
+        return 'Must be between 1 and 10000'
       }
+      return true
+    },
+  })
+  const totalCount = Number.parseInt(countStr, 10)
+
+  let distribution: DifficultyDistribution
+
+  if (preset === 'very-easy') {
+    distribution = {
+      veryEasy: totalCount,
+      easy: 0,
+      medium: 0,
+      hard: 0,
+      veryHard: 0,
+    }
+  } else if (preset === 'standard') {
+    // Standard eval: 25% very easy, 25% easy, 25% medium, 20% hard, 5% very hard
+    distribution = {
+      veryEasy: Math.round(totalCount * 0.25),
+      easy: Math.round(totalCount * 0.25),
+      medium: Math.round(totalCount * 0.25),
+      hard: Math.round(totalCount * 0.2),
+      veryHard: Math.round(totalCount * 0.05),
+    }
+    // Adjust for rounding errors
+    const sum =
+      distribution.veryEasy +
+      distribution.easy +
+      distribution.medium +
+      distribution.hard +
+      distribution.veryHard
+    if (sum < totalCount) {
+      distribution.veryEasy += totalCount - sum
+    }
+  } else {
+    // Custom preset
+    console.log('\nDifficulty levels:')
+    console.log('  • Very Easy: 1 box/goal, small board (5x5/6x6), NO internal walls')
+    console.log('  • Easy: 1 box/goal, larger board (4x10), WITH walls')
+    console.log('  • Medium: 2 boxes/goals, WITH walls')
+    console.log('  • Hard: 3 boxes/goals, WITH walls')
+    console.log('  • Very Hard: 4 boxes/goals, WITH walls')
+    console.log('\nEnter distribution percentages (must sum to 100):')
+
+    const veryEasyStr = await input({
+      message: 'Very Easy %:',
+      default: '25',
+      validate: (value) => {
+        const num = Number.parseInt(value, 10)
+        if (Number.isNaN(num) || num < 0 || num > 100) {
+          return 'Must be between 0 and 100'
+        }
+        return true
+      },
+    })
+    const veryEasyPct = Number.parseInt(veryEasyStr, 10)
+
+    const easyStr = await input({
+      message: 'Easy %:',
+      default: '25',
+      validate: (value) => {
+        const num = Number.parseInt(value, 10)
+        if (Number.isNaN(num) || num < 0 || num > 100 - veryEasyPct) {
+          return `Must be between 0 and ${100 - veryEasyPct}`
+        }
+        return true
+      },
+    })
+    const easyPct = Number.parseInt(easyStr, 10)
+
+    const mediumStr = await input({
+      message: 'Medium %:',
+      default: '25',
+      validate: (value) => {
+        const num = Number.parseInt(value, 10)
+        if (Number.isNaN(num) || num < 0 || num > 100 - veryEasyPct - easyPct) {
+          return `Must be between 0 and ${100 - veryEasyPct - easyPct}`
+        }
+        return true
+      },
+    })
+    const mediumPct = Number.parseInt(mediumStr, 10)
+
+    const hardStr = await input({
+      message: 'Hard %:',
+      default: '20',
+      validate: (value) => {
+        const num = Number.parseInt(value, 10)
+        if (Number.isNaN(num) || num < 0 || num > 100 - veryEasyPct - easyPct - mediumPct) {
+          return `Must be between 0 and ${100 - veryEasyPct - easyPct - mediumPct}`
+        }
+        return true
+      },
+    })
+    const hardPct = Number.parseInt(hardStr, 10)
+
+    const veryHardPct = 100 - veryEasyPct - easyPct - mediumPct - hardPct
+    console.log(`   Very Hard: ${veryHardPct}%`)
+
+    distribution = {
+      veryEasy: Math.round(totalCount * (veryEasyPct / 100)),
+      easy: Math.round(totalCount * (easyPct / 100)),
+      medium: Math.round(totalCount * (mediumPct / 100)),
+      hard: Math.round(totalCount * (hardPct / 100)),
+      veryHard: Math.round(totalCount * (veryHardPct / 100)),
+    }
+
+    // Adjust for rounding errors
+    const sum =
+      distribution.veryEasy +
+      distribution.easy +
+      distribution.medium +
+      distribution.hard +
+      distribution.veryHard
+    if (sum < totalCount) {
+      distribution.veryEasy += totalCount - sum
     }
   }
 
-  // Shuffle the final list so the distribution is mixed
-  const shuffledLevels = shuffle(levels)
-
-  // Generate TypeScript file content
-  const asciiLevels = shuffledLevels.map((level, idx) => {
-    const ascii = levelToAscii(level)
-    return `; ${idx}\n${ascii}`
+  // Output directory
+  const outputDir = await input({
+    message: 'Output directory:',
+    default: 'data/raw',
   })
 
-  const fileContent = `// LMIQ Reasoning Easy eval set
-// Generated with: bun run scripts/generate-lmiq-eval.ts ${totalCount}
+  // Train/test split
+  const splitStr = await input({
+    message: 'Test set percentage (0-50):',
+    default: '10',
+    validate: (value) => {
+      const num = Number.parseInt(value, 10)
+      if (Number.isNaN(num) || num < 0 || num > 50) {
+        return 'Must be between 0 and 50'
+      }
+      return true
+    },
+  })
+  const trainTestSplit = Number.parseInt(splitStr, 10)
+
+  return {
+    preset,
+    totalCount,
+    distribution,
+    outputDir,
+    trainTestSplit,
+  }
+}
+
+function getPresetLabel(preset: DifficultyPreset): string {
+  switch (preset) {
+    case 'very-easy':
+      return 'Very Easy Only'
+    case 'standard':
+      return 'Standard Eval'
+    case 'custom':
+      return 'Custom'
+  }
+}
+
+// ============================================================================
+// MAIN
+// ============================================================================
+
+interface GeneratedLevelWithId extends GeneratedLevel {
+  id: string
+  difficulty: DifficultyLevel
+}
+
+/**
+ * Difficulty category configuration for level generation.
+ */
+interface DifficultyConfig {
+  difficulty: DifficultyLevel
+  numBoxes: number
+  minSize: number
+  maxSize: number
+  withWalls: boolean
+}
+
+const DIFFICULTY_CONFIGS: DifficultyConfig[] = [
+  { difficulty: 'very-easy', numBoxes: 1, minSize: 5, maxSize: 6, withWalls: false },
+  { difficulty: 'easy', numBoxes: 1, minSize: 4, maxSize: 10, withWalls: true },
+  { difficulty: 'medium', numBoxes: 2, minSize: 4, maxSize: 10, withWalls: true },
+  { difficulty: 'hard', numBoxes: 3, minSize: 4, maxSize: 10, withWalls: true },
+  { difficulty: 'very-hard', numBoxes: 4, minSize: 5, maxSize: 10, withWalls: true },
+]
+
+async function generatePuzzles(config: GenerationConfig): Promise<GeneratedLevelWithId[]> {
+  const levels: GeneratedLevelWithId[] = []
+  const seenHashes = new Set<string>()
+
+  // Map distribution to difficulty configs
+  const categories: [DifficultyConfig, number][] = [
+    [DIFFICULTY_CONFIGS[0], config.distribution.veryEasy],
+    [DIFFICULTY_CONFIGS[1], config.distribution.easy],
+    [DIFFICULTY_CONFIGS[2], config.distribution.medium],
+    [DIFFICULTY_CONFIGS[3], config.distribution.hard],
+    [DIFFICULTY_CONFIGS[4], config.distribution.veryHard],
+  ]
+
+  for (const [diffConfig, count] of categories) {
+    if (count === 0) continue
+
+    console.log(`Generating ${count} ${getDifficultyLabel(diffConfig.difficulty)} puzzles...`)
+
+    let generated = 0
+    let duplicates = 0
+    const maxDuplicateAttempts = count * 10 // Prevent infinite loops
+
+    while (generated < count && duplicates < maxDuplicateAttempts) {
+      const level = generateLevel({
+        numBoxes: diffConfig.numBoxes,
+        minSize: diffConfig.minSize,
+        maxSize: diffConfig.maxSize,
+        withWalls: diffConfig.withWalls,
+      })
+
+      if (level) {
+        const ascii = levelToAsciiArray(level)
+        const hash = hashPuzzle(ascii)
+
+        if (seenHashes.has(hash)) {
+          duplicates++
+          continue
+        }
+
+        seenHashes.add(hash)
+        levels.push({ ...level, id: hash, difficulty: diffConfig.difficulty })
+        generated++
+      } else {
+        // Try again with more attempts
+        const retry = generateLevel({
+          numBoxes: diffConfig.numBoxes,
+          minSize: diffConfig.minSize,
+          maxSize: diffConfig.maxSize,
+          withWalls: diffConfig.withWalls,
+          maxAttempts: 5000,
+        })
+
+        if (retry) {
+          const ascii = levelToAsciiArray(retry)
+          const hash = hashPuzzle(ascii)
+
+          if (seenHashes.has(hash)) {
+            duplicates++
+            continue
+          }
+
+          seenHashes.add(hash)
+          levels.push({ ...retry, id: hash, difficulty: diffConfig.difficulty })
+          generated++
+        } else {
+          console.error('Failed to generate puzzle after extended attempts')
+          duplicates++
+        }
+      }
+    }
+
+    if (duplicates > 0) {
+      console.log(`   (skipped ${duplicates} duplicates)`)
+    }
+
+    if (generated < count) {
+      console.warn(`   Only generated ${generated}/${count} unique puzzles`)
+    }
+  }
+
+  return shuffle(levels)
+}
+
+async function main(): Promise<void> {
+  // Handle Ctrl+C gracefully
+  process.on('SIGINT', () => {
+    console.log('\n\n👋 Cancelled\n')
+    process.exit(0)
+  })
+
+  try {
+    const config = await promptForConfig()
+
+    // Show summary
+    console.log('\n📋 Configuration:')
+    console.log(`   Preset: ${getPresetLabel(config.preset)}`)
+    console.log(`   Total Puzzles: ${config.totalCount}`)
+    console.log('   Distribution:')
+    console.log(`     Very Easy: ${config.distribution.veryEasy} (1 box, 5x5-6x6, no walls)`)
+    console.log(`     Easy:      ${config.distribution.easy} (1 box, 4x10, walls)`)
+    console.log(`     Medium:    ${config.distribution.medium} (2 boxes, walls)`)
+    console.log(`     Hard:      ${config.distribution.hard} (3 boxes, walls)`)
+    console.log(`     Very Hard: ${config.distribution.veryHard} (4 boxes, walls)`)
+    console.log(`   Output Directory: ${config.outputDir}`)
+    console.log(`   Train/Test Split: ${100 - config.trainTestSplit}% / ${config.trainTestSplit}%`)
+
+    const proceed = await confirm({
+      message: 'Start generation?',
+      default: true,
+    })
+
+    if (!proceed) {
+      console.log('\n👋 Cancelled\n')
+      return
+    }
+
+    console.log('\n')
+
+    // Generate puzzles
+    const shuffledLevels = await generatePuzzles(config)
+
+    if (shuffledLevels.length === 0) {
+      console.error('No puzzles generated!')
+      return
+    }
+
+    // Generate TypeScript file content
+    const asciiLevels = shuffledLevels.map((level, idx) => {
+      const ascii = levelToAscii(level)
+      return `; ${idx}\n${ascii}`
+    })
+
+    const fileContent = `// LMIQ Reasoning ${getPresetLabel(config.preset)} eval set
+// Generated with: bun run scripts/generate-lmiq-eval.ts
 // Total puzzles: ${shuffledLevels.length}
-// Distribution: 1-box=${distribution.boxes1}, 2-box=${distribution.boxes2}, 3-box=${distribution.boxes3}, 4-box=${distribution.boxes4}
+// Distribution: Very Easy=${config.distribution.veryEasy}, Easy=${config.distribution.easy}, Medium=${config.distribution.medium}, Hard=${config.distribution.hard}, Very Hard=${config.distribution.veryHard}
 
 export const LMIQ_REASONING_EASY_LEVELS_RAW = \`${asciiLevels.join('\n\n')}\`
 `
 
-  const outputPath = resolve(process.cwd(), 'apps/ui-sokoban/src/data/lmiqReasoningEasyLevels.ts')
+    const outputPath = resolve(process.cwd(), 'apps/ui-sokoban/src/data/lmiqReasoningEasyLevels.ts')
 
-  await writeFile(outputPath, fileContent)
+    await writeFile(outputPath, fileContent)
 
-  console.log(`\nGenerated ${shuffledLevels.length} puzzles`)
-  console.log(`Written to: ${outputPath}`)
+    console.log(`\nGenerated ${shuffledLevels.length} puzzles`)
+    console.log(`Written to: ${outputPath}`)
 
-  // ============================================================================
-  // JSONL GENERATION (Train/Test Split)
-  // ============================================================================
+    // ============================================================================
+    // JSONL GENERATION (Train/Test Split)
+    // ============================================================================
 
-  const dataDir = resolve(process.cwd(), 'data/raw')
-  await mkdir(dataDir, { recursive: true })
+    const dataDir = resolve(process.cwd(), config.outputDir)
+    await mkdir(dataDir, { recursive: true })
 
-  // Split: 10% for test, 90% for train
-  const testSize = Math.max(1, Math.round(shuffledLevels.length * 0.1))
-  const testLevels = shuffledLevels.slice(0, testSize)
-  const trainLevels = shuffledLevels.slice(testSize)
+    // Split based on config
+    const testSize = Math.max(
+      config.trainTestSplit > 0 ? 1 : 0,
+      Math.round(shuffledLevels.length * (config.trainTestSplit / 100)),
+    )
+    const testLevels = shuffledLevels.slice(0, testSize)
+    const trainLevels = shuffledLevels.slice(testSize)
 
-  console.log(`\nSplit: ${trainLevels.length} train, ${testLevels.length} test`)
+    console.log(`\nSplit: ${trainLevels.length} train, ${testLevels.length} test`)
 
-  // Generate train entries
-  const trainBaseEntries: string[] = []
-  const trainWithSolutionsEntries: string[] = []
-  for (let i = 0; i < trainLevels.length; i++) {
-    const level = trainLevels[i]
-    const puzzleId = `lmiq_train_${level.width}x${level.height}_${String(i).padStart(3, '0')}`
-    trainBaseEntries.push(JSON.stringify(generateTestEntry(level, puzzleId))) // No solution
-    trainWithSolutionsEntries.push(JSON.stringify(generateTrainEntry(level, puzzleId))) // With solution
+    // Generate train entries
+    const trainBaseEntries: string[] = []
+    const trainWithSolutionsEntries: string[] = []
+    for (let i = 0; i < trainLevels.length; i++) {
+      const level = trainLevels[i]
+      const puzzleId = `lmiq_train_${level.width}x${level.height}_${String(i).padStart(3, '0')}`
+      trainBaseEntries.push(JSON.stringify(generateTestEntry(level, puzzleId, level.difficulty))) // No solution
+      trainWithSolutionsEntries.push(
+        JSON.stringify(generateTrainEntry(level, puzzleId, level.difficulty)),
+      ) // With solution
+    }
+
+    // Generate test entries (without solutions - for LLM evaluation)
+    const testEntries: string[] = []
+    for (let i = 0; i < testLevels.length; i++) {
+      const level = testLevels[i]
+      const puzzleId = `lmiq_test_${level.width}x${level.height}_${String(i).padStart(3, '0')}`
+      testEntries.push(JSON.stringify(generateTestEntry(level, puzzleId, level.difficulty)))
+    }
+
+    // Write train.jsonl (base - no solutions, for LLM to solve)
+    const trainPath = resolve(dataDir, 'train.jsonl')
+    await writeFile(trainPath, `${trainBaseEntries.join('\n')}\n`)
+
+    // Write train_with_solutions.jsonl (with programmatic solutions)
+    const trainWithSolutionsPath = resolve(dataDir, 'train_with_solutions.jsonl')
+    await writeFile(trainWithSolutionsPath, `${trainWithSolutionsEntries.join('\n')}\n`)
+
+    // Write test.jsonl (without solutions)
+    const testPath = resolve(dataDir, 'test.jsonl')
+    await writeFile(testPath, `${testEntries.join('\n')}\n`)
+
+    console.log('\nJSONL files written:')
+    console.log(`  Train (base):           ${trainPath} (${trainLevels.length} puzzles)`)
+    console.log(
+      `  Train (with solutions): ${trainWithSolutionsPath} (${trainLevels.length} puzzles)`,
+    )
+    console.log(`  Test:                   ${testPath} (${testLevels.length} puzzles)`)
+
+    // Print stats
+    const stats = {
+      total: shuffledLevels.length,
+      avgSolutionLength:
+        shuffledLevels.reduce((sum, l) => sum + l.solutionLength, 0) / shuffledLevels.length,
+      sizeDistribution: {} as Record<string, number>,
+      difficultyDistribution: {} as Record<string, number>,
+    }
+
+    for (const level of shuffledLevels) {
+      const sizeKey = `${level.width}x${level.height}`
+      stats.sizeDistribution[sizeKey] = (stats.sizeDistribution[sizeKey] || 0) + 1
+
+      const diffKey = getDifficultyLabel(level.difficulty)
+      stats.difficultyDistribution[diffKey] = (stats.difficultyDistribution[diffKey] || 0) + 1
+    }
+
+    console.log('\n📊 Stats:')
+    console.log(`   Average solution length: ${stats.avgSolutionLength.toFixed(1)} moves`)
+    console.log('   Size distribution:', stats.sizeDistribution)
+    console.log('   Difficulty distribution:', stats.difficultyDistribution)
+    console.log('')
+  } catch (error) {
+    if (error instanceof ExitPromptError) {
+      console.log('\n\n👋 Cancelled\n')
+      process.exit(0)
+    }
+    throw error
   }
-
-  // Generate test entries (without solutions - for LLM evaluation)
-  const testEntries: string[] = []
-  for (let i = 0; i < testLevels.length; i++) {
-    const level = testLevels[i]
-    const puzzleId = `lmiq_test_${level.width}x${level.height}_${String(i).padStart(3, '0')}`
-    testEntries.push(JSON.stringify(generateTestEntry(level, puzzleId)))
-  }
-
-  // Write train.jsonl (base - no solutions, for LLM to solve)
-  const trainPath = resolve(dataDir, 'train.jsonl')
-  await writeFile(trainPath, `${trainBaseEntries.join('\n')}\n`)
-
-  // Write train_with_solutions.jsonl (with programmatic solutions)
-  const trainWithSolutionsPath = resolve(dataDir, 'train_with_solutions.jsonl')
-  await writeFile(trainWithSolutionsPath, `${trainWithSolutionsEntries.join('\n')}\n`)
-
-  // Write test.jsonl (without solutions)
-  const testPath = resolve(dataDir, 'test.jsonl')
-  await writeFile(testPath, `${testEntries.join('\n')}\n`)
-
-  console.log('\nJSONL files written:')
-  console.log(`  Train (base):           ${trainPath} (${trainLevels.length} puzzles)`)
-  console.log(`  Train (with solutions): ${trainWithSolutionsPath} (${trainLevels.length} puzzles)`)
-  console.log(`  Test:                   ${testPath} (${testLevels.length} puzzles)`)
-
-  // Print stats
-  const stats = {
-    total: shuffledLevels.length,
-    avgSolutionLength:
-      shuffledLevels.reduce((sum, l) => sum + l.solutionLength, 0) / shuffledLevels.length,
-    sizeDistribution: {} as Record<string, number>,
-    difficultyDistribution: {} as Record<string, number>,
-  }
-
-  for (const level of shuffledLevels) {
-    const sizeKey = `${level.width}x${level.height}`
-    stats.sizeDistribution[sizeKey] = (stats.sizeDistribution[sizeKey] || 0) + 1
-
-    const diffKey = getDifficulty(level.numBoxes)
-    stats.difficultyDistribution[diffKey] = (stats.difficultyDistribution[diffKey] || 0) + 1
-  }
-
-  console.log('\nStats:')
-  console.log(`  Average solution length: ${stats.avgSolutionLength.toFixed(1)} moves`)
-  console.log('  Size distribution:', stats.sizeDistribution)
-  console.log('  Difficulty distribution:', stats.difficultyDistribution)
 }
 
-main().catch(console.error)
+main().catch((error) => {
+  console.error('\nFatal error:', error.message)
+  process.exit(1)
+})

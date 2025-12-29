@@ -1,4 +1,8 @@
-import { createOpenRouterClient } from '@sokoban-eval-toolkit/utils'
+import {
+  createOpenRouterClient,
+  extractOpenRouterCost,
+  extractOpenRouterReasoningTokens,
+} from '@sokoban-eval-toolkit/utils'
 import type { GameState, MoveDirection, PromptOptions, SessionMetrics } from '@src/types'
 import { generateMoveByMovePrompt, generateSokobanPrompt } from '@src/utils/promptGeneration'
 import { parseAIResponse } from '@src/utils/solutionValidator'
@@ -21,6 +25,8 @@ export interface LLMResponse {
   parsedReasoning?: string
   inputTokens: number
   outputTokens: number
+  /** Reasoning tokens (for models like o1, DeepSeek R1 that report this separately) */
+  reasoningTokens: number
   cost: number
   durationMs: number
   error?: string
@@ -62,10 +68,10 @@ export async function getSokobanSolution(
 
     const parsed = parseAIResponse(content)
 
-    // Estimate cost (rough approximation - OpenRouter provides actual cost in headers)
     const inputTokens = usage?.prompt_tokens ?? 0
     const outputTokens = usage?.completion_tokens ?? 0
-    const cost = estimateCost(model, inputTokens, outputTokens)
+    const reasoningTokens = extractOpenRouterReasoningTokens(usage)
+    const cost = extractOpenRouterCost(usage)
 
     return {
       moves: parsed.moves,
@@ -74,6 +80,7 @@ export async function getSokobanSolution(
       parsedReasoning: parsed.reasoning,
       inputTokens,
       outputTokens,
+      reasoningTokens,
       cost,
       durationMs,
       error: parsed.error,
@@ -85,6 +92,7 @@ export async function getSokobanSolution(
       rawResponse: '',
       inputTokens: 0,
       outputTokens: 0,
+      reasoningTokens: 0,
       cost: 0,
       durationMs,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -131,7 +139,8 @@ export async function getNextMove(
 
     const inputTokens = usage?.prompt_tokens ?? 0
     const outputTokens = usage?.completion_tokens ?? 0
-    const cost = estimateCost(model, inputTokens, outputTokens)
+    const reasoningTokens = extractOpenRouterReasoningTokens(usage)
+    const cost = extractOpenRouterCost(usage)
 
     return {
       moves: parsed.moves.slice(0, 1), // Only take first move
@@ -140,6 +149,7 @@ export async function getNextMove(
       parsedReasoning: parsed.reasoning,
       inputTokens,
       outputTokens,
+      reasoningTokens,
       cost,
       durationMs,
       error: parsed.error,
@@ -151,29 +161,12 @@ export async function getNextMove(
       rawResponse: '',
       inputTokens: 0,
       outputTokens: 0,
+      reasoningTokens: 0,
       cost: 0,
       durationMs,
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
-}
-
-/**
- * Rough cost estimation based on model.
- * Actual costs may vary - this is for display purposes.
- */
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  // Very rough estimates per 1K tokens
-  const rates: Record<string, { input: number; output: number }> = {
-    'openai/gpt-4o': { input: 0.005, output: 0.015 },
-    'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-    'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
-    'anthropic/claude-haiku-4.5': { input: 0.0008, output: 0.004 },
-    'google/gemini-2.5-pro': { input: 0.00125, output: 0.005 },
-  }
-
-  const rate = rates[model] ?? { input: 0.001, output: 0.003 }
-  return (inputTokens * rate.input + outputTokens * rate.output) / 1000
 }
 
 /**

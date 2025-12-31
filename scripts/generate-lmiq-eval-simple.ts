@@ -354,7 +354,7 @@ ANSWER: \`RRULLDR\``
  */
 function generateTrainEntry(puzzle: GeneratedPuzzleWithId): Record<string, unknown> {
   const puzzleLines = puzzleToLines(puzzle.puzzle)
-  const systemPrompt = 'You are a navigation assistant. Find the shortest path.'
+  const systemPrompt = 'You are a navigation assistant specializing in 2D navigation challenges.'
   const userPrompt = generateUserPrompt(puzzle)
   const assistantResponse = puzzle.shortestPath
 
@@ -380,7 +380,7 @@ function generateTrainEntry(puzzle: GeneratedPuzzleWithId): Record<string, unkno
  */
 function generateTestEntry(puzzle: GeneratedPuzzleWithId): Record<string, unknown> {
   const puzzleLines = puzzleToLines(puzzle.puzzle)
-  const systemPrompt = 'You are a navigation assistant. Find the shortest path.'
+  const systemPrompt = 'You are a navigation assistant specializing in 2D navigation challenges.'
   const userPrompt = generateUserPrompt(puzzle)
 
   return {

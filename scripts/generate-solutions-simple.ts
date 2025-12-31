@@ -22,6 +22,7 @@ import { ExitPromptError } from '@inquirer/core'
 import { confirm, input, select } from '@inquirer/prompts'
 import {
   OPENROUTER_MODELS,
+  SIMPLE_NAV_OUTPUT_FORMAT_INSTRUCTIONS,
   createOpenRouterClient,
   extractOpenRouterCost,
   extractOpenRouterReasoningTokens,
@@ -34,6 +35,35 @@ import pLimit from 'p-limit'
 // ============================================================================
 
 const DEFAULT_MAX_RETRIES = 3
+
+const REASONING_INSTRUCTIONS = `
+Your task is to produce clear step-by-step reasoning which leads to the solution to this puzzle. Format your response as a JSON object with the following structure:
+
+\`\`\`json
+{
+  "reasoning": "<your step-by-step reasoning>",
+  "solution": "UDLR..."
+}
+\`\`\`
+
+Your reasoning should follow this structure (include these headers in your reasoning string):
+
+## Initial Observations
+List clear and useful observations about the puzzle - e.g. player and goal locations, any wall locations, board size, etc.
+
+## Strategy Exploration
+Begin to enumerate obvious strategy directions. For example, if the goal is in row 4 and you are in row 2, a useful observation is: "I am in row 2 and the goal is in row 4. I will need to move down at least twice to reach the goal. I should check if there are any walls that would block a direct move down." List wall locations and the type of movement they would block (or note if they seem irrelevant).
+
+## Refinement
+Begin to refine a specific strategic solution utilizing your above observations.
+
+## Solution
+Enumerate the specific solution logic and steps that lead to your final move sequence.
+
+The "solution" string must contain only the characters U (up), D (down), L (left), and R (right). For example: "RRDDLU".
+
+IMPORTANT: Your entire response must be valid JSON matching the schema above. Do not include any text before or after the JSON object.
+`.trim()
 
 // ============================================================================
 // Types
@@ -113,6 +143,13 @@ interface LLMResult {
   cost: number
   durationMs: number
   error?: string
+}
+
+interface ParsedResponse {
+  reasoning: string
+  solution: string // e.g. "RRDDLU"
+  moves: MoveDirection[] // parsed from solution string
+  raw: string
 }
 
 type MoveDirection = 'U' | 'D' | 'L' | 'R'
@@ -199,13 +236,71 @@ function parsePuzzle(puzzle: string[]): PuzzleState {
 }
 
 /**
- * Parse moves from LLM response. Finds contiguous U/D/L/R sequences.
+ * Parse the JSON response from the LLM.
+ * Expected format: { "reasoning": "...", "solution": "RRDDLU" }
  */
-function parseMoves(response: string): MoveDirection[] {
+function parseResponse(response: string): ParsedResponse | null {
+  try {
+    // Try to extract JSON from the response (may be wrapped in markdown code block)
+    let jsonStr = response.trim()
+
+    // Remove markdown code block if present
+    const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (jsonBlockMatch) {
+      jsonStr = jsonBlockMatch[1].trim()
+    }
+
+    const parsed = JSON.parse(jsonStr)
+
+    // Validate schema: reasoning must be non-empty string, solution must be non-empty string
+    if (
+      typeof parsed.reasoning !== 'string' ||
+      parsed.reasoning.trim().length === 0 ||
+      typeof parsed.solution !== 'string' ||
+      parsed.solution.trim().length === 0
+    ) {
+      return null
+    }
+
+    // Validate and normalize the solution string (only U/D/L/R allowed)
+    const solutionStr = parsed.solution.toUpperCase()
+    const moves: MoveDirection[] = []
+
+    for (const char of solutionStr) {
+      if (char === 'U' || char === 'D' || char === 'L' || char === 'R') {
+        moves.push(char)
+      } else {
+        // Invalid move character - skip whitespace, reject anything else
+        if (!/\s/.test(char)) {
+          return null
+        }
+      }
+    }
+
+    // Must have at least one move
+    if (moves.length === 0) {
+      return null
+    }
+
+    return {
+      reasoning: parsed.reasoning,
+      solution: moves.join(''), // Normalized: uppercase, no whitespace
+      moves,
+      raw: response,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fallback: Parse moves from LLM response by finding contiguous U/D/L/R sequences.
+ * Used when JSON parsing fails.
+ */
+function parseMovesFallback(response: string): MoveDirection[] {
   const moves: MoveDirection[] = []
 
   // Find all contiguous sequences of U/D/L/R (case insensitive)
-  // This avoids picking up letters from words like "UP", "DOWN", "LEFT", "RIGHT" in reasoning
   const sequences = response.match(/[UDLRudlr]{2,}/g) || []
 
   // Use the longest sequence found (most likely to be the actual solution)
@@ -219,19 +314,8 @@ function parseMoves(response: string): MoveDirection[] {
   const normalized = bestSequence.toUpperCase()
 
   for (const char of normalized) {
-    switch (char) {
-      case 'U':
-        moves.push('U')
-        break
-      case 'D':
-        moves.push('D')
-        break
-      case 'L':
-        moves.push('L')
-        break
-      case 'R':
-        moves.push('R')
-        break
+    if (char === 'U' || char === 'D' || char === 'L' || char === 'R') {
+      moves.push(char)
     }
   }
 
@@ -305,12 +389,28 @@ async function generateSolution(
 
   try {
     // Flatten system message into user message for better model compatibility
+    // and append reasoning instructions
     const systemMsg = entry.messages.find((m) => m.role === 'system')
     const userMsg = entry.messages.find((m) => m.role === 'user')
 
-    const combinedContent = systemMsg
-      ? `${systemMsg.content}\n\n${userMsg?.content || ''}`
-      : userMsg?.content || ''
+    // Strip the original output format instructions
+    let userContent = userMsg?.content || ''
+
+    // Try exact match first (most reliable)
+    const exactIndex = userContent.indexOf(SIMPLE_NAV_OUTPUT_FORMAT_INSTRUCTIONS)
+    if (exactIndex !== -1) {
+      userContent = userContent.slice(0, exactIndex).trim()
+    } else {
+      // Fallback: look for common markers if exact match fails (handles legacy prompts)
+      const outputFormatIdx = userContent.indexOf('## Output Format')
+      if (outputFormatIdx !== -1) {
+        userContent = userContent.slice(0, outputFormatIdx).trim()
+      }
+    }
+
+    const puzzleContent = systemMsg ? `${systemMsg.content}\n\n${userContent}` : userContent
+
+    const combinedContent = `${puzzleContent}\n\n${REASONING_INSTRUCTIONS}`
 
     const messages = [{ role: 'user' as const, content: combinedContent }]
 
@@ -395,7 +495,7 @@ async function processOneEntry(
   let usedFallback = false
   let lastResult: LLMResult | null = null
   let lastResponse = ''
-  let lastReasoning: string | undefined
+  let lastParsed: ParsedResponse | null = null
   let lastMoves: MoveDirection[] = []
 
   const log = (msg: string) => {
@@ -417,7 +517,6 @@ async function processOneEntry(
     totalDurationMs += result.durationMs
     lastResult = result
     lastResponse = result.response
-    lastReasoning = result.reasoning
 
     if (result.error) {
       log(`API error: ${result.error}`)
@@ -428,16 +527,29 @@ async function processOneEntry(
       continue
     }
 
-    // Parse and validate the solution
-    const moves = parseMoves(result.response)
+    // Parse the JSON response
+    const parsed = parseResponse(result.response)
+    let moves: MoveDirection[]
+
+    if (parsed) {
+      moves = parsed.moves
+      lastParsed = parsed
+      log(`Parsed JSON with ${moves.length} moves: ${parsed.solution}`)
+    } else {
+      // Fallback to legacy parsing
+      moves = parseMovesFallback(result.response)
+      log(`JSON parse failed, fallback found ${moves.length} moves`)
+    }
+
     lastMoves = moves
-    log(
-      `Parsed ${moves.length} moves from response (${moves.slice(0, 10).join('')}${moves.length > 10 ? '...' : ''})`,
-    )
 
     if (validateSolution(entry.puzzle, moves)) {
       log('Valid solution found!')
-      // Valid solution found
+      // Valid solution found - format as JSON response for training
+      const assistantContent = parsed
+        ? JSON.stringify({ reasoning: parsed.reasoning, solution: parsed.solution }, null, 2)
+        : result.response
+
       const trainEntry: TrainEntry = {
         id: entry.id,
         type: 'navigation',
@@ -451,9 +563,7 @@ async function processOneEntry(
           ...entry.messages,
           {
             role: 'assistant',
-            content: result.reasoning
-              ? `<think>\n${result.reasoning}\n</think>\n\n${result.response}`
-              : result.response,
+            content: assistantContent,
           },
         ],
         llmPathLength: moves.length,
@@ -489,17 +599,31 @@ async function processOneEntry(
     totalDurationMs += result.durationMs
     lastResult = result
     lastResponse = result.response
-    lastReasoning = result.reasoning
 
     if (result.error) {
       log(`Fallback API error: ${result.error}`)
     } else {
-      const moves = parseMoves(result.response)
+      // Parse the JSON response
+      const parsed = parseResponse(result.response)
+      let moves: MoveDirection[]
+
+      if (parsed) {
+        moves = parsed.moves
+        lastParsed = parsed
+        log(`Fallback parsed JSON with ${moves.length} moves: ${parsed.solution}`)
+      } else {
+        moves = parseMovesFallback(result.response)
+        log(`Fallback JSON parse failed, found ${moves.length} moves`)
+      }
+
       lastMoves = moves
-      log(`Fallback parsed ${moves.length} moves`)
 
       if (validateSolution(entry.puzzle, moves)) {
         log('Fallback solution valid!')
+        const assistantContent = parsed
+          ? JSON.stringify({ reasoning: parsed.reasoning, solution: parsed.solution }, null, 2)
+          : result.response
+
         const trainEntry: TrainEntry = {
           id: entry.id,
           type: 'navigation',
@@ -513,9 +637,7 @@ async function processOneEntry(
             ...entry.messages,
             {
               role: 'assistant',
-              content: result.reasoning
-                ? `<think>\n${result.reasoning}\n</think>\n\n${result.response}`
-                : result.response,
+              content: assistantContent,
             },
           ],
           llmPathLength: moves.length,
@@ -540,6 +662,11 @@ async function processOneEntry(
 
   log('All attempts exhausted - marking as unsolved')
   // All attempts failed - mark as unsolved
+  // Still format as JSON if we have parsed content
+  const assistantContent = lastParsed
+    ? JSON.stringify({ reasoning: lastParsed.reasoning, solution: lastParsed.solution }, null, 2)
+    : lastResponse
+
   const trainEntry: TrainEntry = {
     id: entry.id,
     type: 'navigation',
@@ -553,9 +680,7 @@ async function processOneEntry(
       ...entry.messages,
       {
         role: 'assistant',
-        content: lastReasoning
-          ? `<think>\n${lastReasoning}\n</think>\n\n${lastResponse}`
-          : lastResponse,
+        content: assistantContent,
       },
     ],
     unsolved: true,

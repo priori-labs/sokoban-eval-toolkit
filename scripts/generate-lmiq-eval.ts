@@ -17,6 +17,7 @@ import { resolve } from 'node:path'
 
 import { ExitPromptError } from '@inquirer/core'
 import { confirm, input, select } from '@inquirer/prompts'
+import { SOKOBAN_OUTPUT_FORMAT_INSTRUCTIONS } from '@sokoban-eval-toolkit/utils'
 
 import type {
   CellTerrain,
@@ -509,17 +510,7 @@ Legend: # wall, @ player, $ box, . goal, * box on goal, + player on goal, - empt
 
 ${coordinates}
 
-Provide moves as: U (up), D (down), L (left), R (right).
-
-Example solution: UUDLRRRDLR
-
-Output your final answer as a list of moves in backticks EXACTLY as follows at the end of your response:
-
-ANSWER: \`<moves>\`
-
-e.g.
-
-ANSWER: \`RRULLDR\``
+${SOKOBAN_OUTPUT_FORMAT_INSTRUCTIONS}`
 
   const assistantResponse = `Solution: ${solutionNotation}`
 
@@ -558,17 +549,7 @@ Legend: # wall, @ player, $ box, . goal, * box on goal, + player on goal, - empt
 
 ${coordinates}
 
-Provide moves as: U (up), D (down), L (left), R (right).
-
-Example solution: UUDLRRRDLR
-
-Output your final answer as a list of moves in backticks EXACTLY as follows at the end of your response:
-
-ANSWER: \`<moves>\`
-
-e.g.
-
-ANSWER: \`RRULLDR\``
+${SOKOBAN_OUTPUT_FORMAT_INSTRUCTIONS}`
 
   return {
     id: level.id,

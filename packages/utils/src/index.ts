@@ -18,3 +18,7 @@ export {
   type OpenRouterChatResponse,
 } from './openrouter-client'
 export { formatNumber, formatDuration, formatCost } from './format'
+export {
+  SOKOBAN_OUTPUT_FORMAT_INSTRUCTIONS,
+  SIMPLE_NAV_OUTPUT_FORMAT_INSTRUCTIONS,
+} from './prompt-constants'

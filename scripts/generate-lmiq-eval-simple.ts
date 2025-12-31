@@ -15,6 +15,7 @@ import { resolve } from 'node:path'
 
 import { ExitPromptError } from '@inquirer/core'
 import { confirm, input } from '@inquirer/prompts'
+import { SIMPLE_NAV_OUTPUT_FORMAT_INSTRUCTIONS } from '@sokoban-eval-toolkit/utils'
 
 // ============================================================================
 // Types
@@ -330,23 +331,7 @@ Legend:
 - Goal is at row ${goalRow}, column ${goalCol}
 - Walls (#) are impassable
 
-## Output Format
-Provide any solution path as a single string of moves.
-Example format: LDRR
-
-## Important
-Adhere to concise reasoning and minimal output to avoid context window limits.
-
-## Your Task
-What sequence of moves gets the player from @ to G?
-
-Output your final answer as a list of moves in backticks EXACTLY as follows at the end of your response:
-
-ANSWER: \`<moves>\`
-
-e.g.
-
-ANSWER: \`RRULLDR\``
+${SIMPLE_NAV_OUTPUT_FORMAT_INSTRUCTIONS}`
 }
 
 /**

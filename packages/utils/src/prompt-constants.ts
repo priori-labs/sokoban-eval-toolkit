@@ -19,9 +19,7 @@ Think through the problem step by step inside <think> tags, then provide your so
 
 Example:
 <think>
-Let me analyze this. The player is at (3,2) and needs to reach (1,4).
-That's 2 rows up and 2 columns right. No walls block this path.
-So I'll move: right, right, up, up.
+{your detailed reasoning here}
 </think>
 
 {"solution": ["RIGHT", "RIGHT", "UP", "UP"]}

@@ -12,7 +12,7 @@
  * - Retries up to 3 times on invalid solutions
  * - Optional fallback model if primary model fails
  * - Marks unsolved puzzles in output
- * - Mixed data mode: combines native + response reasoning for difficult puzzles
+ * - Difficulty-based prompts for diverse training data
  *
  * Usage:
  *   bun scripts/generate-nav-solutions.ts
@@ -38,20 +38,41 @@ import pLimit from 'p-limit'
 
 const DEFAULT_MAX_RETRIES = 3
 
+// ============================================================================
+// Reasoning Prompt
+// ============================================================================
+
 const REASONING_INSTRUCTIONS = `
-Solve the following navigation puzzle. Provide a clear, step-by-step analysis and explanation of your reasoning to solve this problem.
+You are a navigation expert. Analyze the following problem and then provide a clear, structured overview of your solution. Your solution should follow a methodical thought process and be as detailed as necessary. Apply the following structure:
+
+# Rephrase the Problem
+<Restate the problem in your own words and identify the goals, any key constraints or other observations.>
+
+# Key Details
+<List key details/facts about the problem. Note where the player (@), goal (G) and walls (#) are using r{row}c{col} notation.>
+
+# Strategy Formulation
+<Begin to formulate a strategy to solve the problem. Detail your reasoning and step-by-step thought process. End with a proposed solution.>
+
+# Verification
+<Review and verify the solution process above.>
+
+# Rethink (Optional)
+<Correct any errors identified in the verification step.>
+
+# Summary
+<Summarize and perform one final verification check, and then end with your final proposed solution.>
 
 Format your response as JSON:
 
 \`\`\`json
 {
-  "reasoning": "<your step-by-step reasoning>",
+  "reasoning": "<your structured reasoning following the format above>",
   "solution": ["UP", "DOWN", "LEFT", "RIGHT"]
 }
 \`\`\`
 
 The "solution" field must be an array of moves. Valid moves: "UP", "DOWN", "LEFT", "RIGHT"
-Example: ["RIGHT", "RIGHT", "DOWN", "DOWN", "LEFT", "UP"]
 
 IMPORTANT: Your entire response must be valid JSON. Do not include any text before or after the JSON object.
 `.trim()
@@ -96,7 +117,6 @@ interface GenerationConfig {
   startIndex: number
   maxRetries: number
   verbose: boolean
-  enableMixedData: boolean
 }
 
 interface GenerationStats {
@@ -214,26 +234,6 @@ function computeTokenStats(counts: number[]): {
 
 function posKey(x: number, y: number): string {
   return `${x},${y}`
-}
-
-/**
- * Format mixed training response combining native reasoning with response reasoning.
- * Used for difficult puzzles (pathLength > 6) when enableMixedData is true.
- */
-function formatMixedTrainingResponse(
-  nativeReasoning: string | undefined,
-  responseReasoning: string,
-  solution: MoveDirection[],
-): string {
-  const parts: string[] = []
-
-  if (nativeReasoning) {
-    parts.push(nativeReasoning)
-  }
-  parts.push(responseReasoning)
-  parts.push(`\nSolution: ${JSON.stringify(solution)}`)
-
-  return `<think>${parts.join('\n\n')}</think>\n\n{"solution": ${JSON.stringify(solution)}}`
 }
 
 // ============================================================================
@@ -518,7 +518,6 @@ async function processOneEntry(
   fallbackModel: string | null,
   maxRetries: number,
   verbose: boolean,
-  enableMixedData: boolean,
 ): Promise<ProcessResult> {
   let totalCost = 0
   let totalInputTokens = 0
@@ -529,7 +528,6 @@ async function processOneEntry(
   let usedFallback = false
   let lastResult: LLMResult | null = null
   let lastResponse = ''
-  let lastNativeReasoning: string | undefined
   let lastParsed: ParsedResponse | null = null
   let lastMoves: MoveDirection[] = []
 
@@ -552,7 +550,6 @@ async function processOneEntry(
     totalDurationMs += result.durationMs
     lastResult = result
     lastResponse = result.response
-    lastNativeReasoning = result.reasoning
 
     if (result.error) {
       log(`API error: ${result.error}`)
@@ -582,12 +579,8 @@ async function processOneEntry(
     if (validateSolution(entry.puzzle, moves)) {
       log('Valid solution found!')
       // Valid solution found - format with <think> tags for training
-      // Use mixed format for difficult puzzles (pathLength > 6) when enabled
-      const useMixedFormat = enableMixedData && entry.pathLength > 6 && parsed
       const assistantContent = parsed
-        ? useMixedFormat
-          ? formatMixedTrainingResponse(result.reasoning, parsed.reasoning, parsed.solution)
-          : formatTrainingResponse(parsed.reasoning, parsed.solution)
+        ? formatTrainingResponse(parsed.reasoning, parsed.solution)
         : result.response
 
       const trainEntry: TrainEntry = {
@@ -639,7 +632,6 @@ async function processOneEntry(
     totalDurationMs += result.durationMs
     lastResult = result
     lastResponse = result.response
-    lastNativeReasoning = result.reasoning
 
     if (result.error) {
       log(`Fallback API error: ${result.error}`)
@@ -662,12 +654,8 @@ async function processOneEntry(
       if (validateSolution(entry.puzzle, moves)) {
         log('Fallback solution valid!')
         // Format with <think> tags for training
-        // Use mixed format for difficult puzzles (pathLength > 6) when enabled
-        const useMixedFormat = enableMixedData && entry.pathLength > 6 && parsed
         const assistantContent = parsed
-          ? useMixedFormat
-            ? formatMixedTrainingResponse(result.reasoning, parsed.reasoning, parsed.solution)
-            : formatTrainingResponse(parsed.reasoning, parsed.solution)
+          ? formatTrainingResponse(parsed.reasoning, parsed.solution)
           : result.response
 
         const trainEntry: TrainEntry = {
@@ -709,12 +697,8 @@ async function processOneEntry(
   log('All attempts exhausted - marking as unsolved')
   // All attempts failed - mark as unsolved
   // Still format with <think> tags if we have parsed content
-  // Use mixed format for difficult puzzles (pathLength > 6) when enabled
-  const useMixedFormat = enableMixedData && entry.pathLength > 6 && lastParsed
   const assistantContent = lastParsed
-    ? useMixedFormat
-      ? formatMixedTrainingResponse(lastNativeReasoning, lastParsed.reasoning, lastParsed.solution)
-      : formatTrainingResponse(lastParsed.reasoning, lastParsed.solution)
+    ? formatTrainingResponse(lastParsed.reasoning, lastParsed.solution)
     : lastResponse
 
   const trainEntry: TrainEntry = {
@@ -781,7 +765,6 @@ async function processEntries(
         config.fallbackModel,
         config.maxRetries,
         config.verbose,
-        config.enableMixedData,
       )
 
       processedCount++
@@ -978,12 +961,6 @@ async function promptForConfig(): Promise<GenerationConfig> {
     default: false,
   })
 
-  // Mixed data mode
-  const enableMixedData = await confirm({
-    message: 'Enable mixed data mode? (combines native + response reasoning for pathLength > 6)',
-    default: false,
-  })
-
   return {
     model,
     fallbackModel: fallbackModel || null,
@@ -994,7 +971,6 @@ async function promptForConfig(): Promise<GenerationConfig> {
     startIndex,
     maxRetries,
     verbose,
-    enableMixedData,
   }
 }
 
@@ -1029,7 +1005,6 @@ async function main(): Promise<void> {
     console.log(`   Count: ${config.count} (starting from ${config.startIndex + 1})`)
     console.log(`   Concurrency: ${config.concurrency}`)
     console.log(`   Verbose: ${config.verbose ? 'Yes' : 'No'}`)
-    console.log(`   Mixed Data: ${config.enableMixedData ? 'Yes (pathLength > 6)' : 'No'}`)
 
     const proceed = await confirm({
       message: 'Start generation?',

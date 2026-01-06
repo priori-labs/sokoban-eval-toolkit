@@ -176,6 +176,10 @@ export function createSessionMetrics(): SessionMetrics {
   return {
     totalCost: 0,
     totalTokens: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalReasoningTokens: 0,
+    estimatedWords: 0,
     totalDurationMs: 0,
     requestCount: 0,
   }
@@ -188,9 +192,17 @@ export function updateSessionMetrics(
   metrics: SessionMetrics,
   response: LLMResponse,
 ): SessionMetrics {
+  const newOutputTokens = metrics.totalOutputTokens + response.outputTokens
+  // Estimate words from output tokens (roughly 0.75 words per token)
+  const estimatedWords = Math.round(newOutputTokens * 0.75)
+
   return {
     totalCost: metrics.totalCost + response.cost,
     totalTokens: metrics.totalTokens + response.inputTokens + response.outputTokens,
+    totalInputTokens: metrics.totalInputTokens + response.inputTokens,
+    totalOutputTokens: newOutputTokens,
+    totalReasoningTokens: metrics.totalReasoningTokens + response.reasoningTokens,
+    estimatedWords,
     totalDurationMs: metrics.totalDurationMs + response.durationMs,
     requestCount: metrics.requestCount + 1,
   }

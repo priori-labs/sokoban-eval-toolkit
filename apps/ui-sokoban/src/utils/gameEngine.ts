@@ -60,6 +60,16 @@ function getNewPosition(pos: Position, direction: MoveDirection): Position {
 }
 
 /**
+ * Check if the puzzle has boxes of multiple colors.
+ * Returns false if all boxes are the same color (standard Sokoban).
+ */
+export function hasMultipleColors(boxes: Box[]): boolean {
+  if (boxes.length <= 1) return false
+  const firstColor = boxes[0]?.color
+  return boxes.some((b) => b.color !== firstColor)
+}
+
+/**
  * Check if a box at a given position would be adjacent (horizontally or vertically)
  * to another box of the same color.
  * Returns true if there's a same-color adjacency violation.
@@ -151,8 +161,8 @@ export function validateMove(state: GameState, direction: MoveDirection): MoveVa
   const pushedBox = boxes[boxIndex]
   const newBox: Box = { ...newBoxPos, color: pushedBox.color }
 
-  // Check for same-color adjacency violation
-  if (hasSameColorAdjacency(newBox, boxes, boxIndex)) {
+  // Check for same-color adjacency violation (only if puzzle has multiple colors)
+  if (hasMultipleColors(boxes) && hasSameColorAdjacency(newBox, boxes, boxIndex)) {
     return {
       valid: false,
       isPush: true,

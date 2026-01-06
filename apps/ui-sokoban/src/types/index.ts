@@ -103,6 +103,10 @@ export interface PromptOptions {
 export interface SessionMetrics {
   totalCost: number
   totalTokens: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalReasoningTokens: number
+  estimatedWords: number
   totalDurationMs: number
   requestCount: number
 }

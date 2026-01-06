@@ -261,7 +261,8 @@ function computePlayerReachability(
   reachable.add(`${playerPos.x},${playerPos.y}`)
 
   while (queue.length > 0) {
-    const pos = queue.shift()!
+    const pos = queue.shift()
+    if (!pos) break
     for (const { dx, dy } of DIRECTIONS) {
       const nx = pos.x + dx
       const ny = pos.y + dy
@@ -478,7 +479,8 @@ export async function coloredSolve(
     const batchEnd = Math.min(statesExplored + BATCH_SIZE, maxStates)
 
     while (queue.length > 0 && statesExplored < batchEnd) {
-      const current = queue.shift()!
+      const current = queue.shift()
+      if (!current) break
       statesExplored++
       maxDepthReached = Math.max(maxDepthReached, current.pullCount)
 

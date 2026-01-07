@@ -20,6 +20,7 @@ import { SokobanGrid } from './components/SokobanGrid'
 export function SokobanGame() {
   const [aiInferenceTimeMs, setAiInferenceTimeMs] = useState<number | null>(null)
   const [isEditing, setIsEditing] = useState(true)
+  const [coloredBoxRules, setColoredBoxRules] = useState(false)
   const initialLoadDone = useRef(false)
 
   // Use custom hooks for game state management
@@ -435,6 +436,13 @@ export function SokobanGame() {
               )}
             </div>
           )}
+
+          {/* Colored box rules indicator */}
+          {coloredBoxRules && (
+            <div className="mt-1.5 text-[10px] text-amber-500/80 italic">
+              Colored box variant: boxes can only be pushed onto goals of the same color
+            </div>
+          )}
         </div>
 
         {/* Bottom instructions */}
@@ -457,6 +465,8 @@ export function SokobanGame() {
             disabled={!gameState}
             onInferenceTimeChange={setAiInferenceTimeMs}
             isEditing={isEditing}
+            coloredBoxRules={coloredBoxRules}
+            onColoredBoxRulesChange={setColoredBoxRules}
           />
         </ErrorBoundary>
       </div>

@@ -218,7 +218,7 @@ export function ControlPanel({
                           onLoadLayout(layout.name)
                           onSelectedLayoutChange?.(layout.name)
                         }}
-                        className={`flex-1 min-w-0 text-left flex items-center gap-2 text-[11px] ${
+                        className={`flex-1 min-w-0 text-left flex items-center gap-2 text-[11px] focus:outline-none ${
                           isSelected ? 'text-primary font-medium' : 'text-foreground'
                         }`}
                       >

@@ -46,6 +46,8 @@ interface AIPanelProps {
   disabled?: boolean
   onInferenceTimeChange?: (timeMs: number | null) => void
   isEditing?: boolean
+  coloredBoxRules?: boolean
+  onColoredBoxRulesChange?: (enabled: boolean) => void
 }
 
 type PlannedMoveStatus = 'pending' | 'executing' | 'success' | 'failed'
@@ -63,6 +65,8 @@ export function AIPanel({
   disabled = false,
   onInferenceTimeChange,
   isEditing = false,
+  coloredBoxRules = false,
+  onColoredBoxRulesChange,
 }: AIPanelProps) {
   const [model, setModel] = useState(DEFAULT_MODEL)
   const [promptOptions, setPromptOptions] = useState<PromptOptions>({
@@ -143,9 +147,14 @@ export function AIPanel({
   useEffect(() => {
     const isSavedLayout = levelId?.startsWith('saved-')
     if (isEditing || isSavedLayout) {
-      setPromptOptions((prev) => ({ ...prev, coloredBoxRules: true }))
+      onColoredBoxRulesChange?.(true)
     }
-  }, [isEditing, levelId])
+  }, [isEditing, levelId, onColoredBoxRulesChange])
+
+  // Sync coloredBoxRules prop with local promptOptions
+  useEffect(() => {
+    setPromptOptions((prev) => ({ ...prev, coloredBoxRules }))
+  }, [coloredBoxRules])
 
   // Solution caching removed - solver is now manual only via ControlPanel
 
@@ -726,8 +735,8 @@ export function AIPanel({
             <div className="flex items-center gap-2">
               <Checkbox
                 id="coloredBoxRules"
-                checked={promptOptions.coloredBoxRules}
-                onCheckedChange={() => togglePromptOption('coloredBoxRules')}
+                checked={coloredBoxRules}
+                onCheckedChange={(checked) => onColoredBoxRulesChange?.(!!checked)}
                 disabled={isRunning || plannedMoves.length > 0}
                 className="h-3.5 w-3.5"
               />

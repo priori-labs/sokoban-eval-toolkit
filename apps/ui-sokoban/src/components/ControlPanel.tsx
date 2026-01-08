@@ -1,14 +1,13 @@
 import { Button } from '@sokoban-eval-toolkit/ui-library/components/button'
 import { Separator } from '@sokoban-eval-toolkit/ui-library/components/separator'
-import type { GameState } from '@src/types'
+import type { GameState, HumanSession } from '@src/types'
 import { isSimpleDeadlock } from '@src/utils/gameEngine'
 import type { SavedLayout } from '@src/utils/layoutStorage'
 import { AlertTriangle, ChevronLeft, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 interface ControlPanelProps {
   state: GameState | null
-  aiInferenceTimeMs?: number | null
   // Saved layouts props
   savedLayouts?: SavedLayout[]
   layoutName?: string
@@ -19,11 +18,14 @@ interface ControlPanelProps {
   onReorderLayouts?: (fromIndex: number, toIndex: number) => void
   selectedLayoutName?: string | null
   onSelectedLayoutChange?: (name: string | null) => void
+  // Human session props
+  humanSession?: HumanSession | null
+  onStartSession?: () => void
+  onEndSession?: () => void
 }
 
 export function ControlPanel({
   state,
-  aiInferenceTimeMs,
   savedLayouts = [],
   layoutName = '',
   onLayoutNameChange,
@@ -33,30 +35,33 @@ export function ControlPanel({
   onReorderLayouts,
   selectedLayoutName = null,
   onSelectedLayoutChange,
+  humanSession,
+  onStartSession,
+  onEndSession,
 }: ControlPanelProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const displayTime = useMemo(() => {
-    // If AI inference time is available, show that
-    if (aiInferenceTimeMs != null && aiInferenceTimeMs > 0) {
-      const seconds = Math.round(aiInferenceTimeMs / 1000)
-      if (seconds < 60) return `${seconds}s`
-      const minutes = Math.floor(seconds / 60)
-      const secs = seconds % 60
-      return `${minutes}m ${secs}s`
-    }
 
-    // Otherwise show game elapsed time
-    if (!state?.startTime) return null
-    const endTime = state.endTime ?? Date.now()
-    const ms = endTime - state.startTime
+  const hasDeadlock = state ? isSimpleDeadlock(state) : false
+
+  // Session elapsed time with live update
+  const [sessionTick, setSessionTick] = useState(0)
+
+  useEffect(() => {
+    if (!humanSession?.isActive) return
+    const interval = setInterval(() => setSessionTick((t) => t + 1), 1000)
+    return () => clearInterval(interval)
+  }, [humanSession?.isActive])
+
+  const sessionTime = useMemo(() => {
+    if (!humanSession?.isActive) return null
+    void sessionTick // Trigger recalculation on tick
+    const ms = Date.now() - humanSession.startTime
     const seconds = Math.floor(ms / 1000)
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${minutes}:${secs.toString().padStart(2, '0')}`
-  }, [state?.startTime, state?.endTime, aiInferenceTimeMs])
-
-  const hasDeadlock = state ? isSimpleDeadlock(state) : false
+  }, [humanSession?.isActive, humanSession?.startTime, sessionTick])
 
   return (
     <div className="space-y-3">
@@ -64,22 +69,6 @@ export function ControlPanel({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Game Stats
         </span>
-      </div>
-
-      <Separator />
-
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-muted/30 rounded-md px-2 py-1.5">
-          <div className="text-[9px] text-muted-foreground uppercase tracking-wide">Moves</div>
-          <div className="text-sm font-semibold tabular-nums">{state?.moveCount ?? 0}</div>
-        </div>
-        <div className="bg-muted/30 rounded-md px-2 py-1.5">
-          <div className="text-[9px] text-muted-foreground uppercase tracking-wide">
-            {aiInferenceTimeMs != null && aiInferenceTimeMs > 0 ? 'AI Time' : 'Time'}
-          </div>
-          <div className="text-sm font-semibold tabular-nums">{displayTime ?? '--:--'}</div>
-        </div>
       </div>
 
       {/* Deadlock warning */}
@@ -92,6 +81,45 @@ export function ControlPanel({
           </div>
         </div>
       )}
+
+      {/* Human Session */}
+      {onStartSession &&
+        onEndSession &&
+        (humanSession?.isActive ? (
+          <>
+            {/* Session stats */}
+            <div className="bg-primary/10 border border-primary/30 rounded-md px-3 py-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Session Active
+                </span>
+                <span className="text-xs font-mono text-primary">{sessionTime}</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-muted-foreground">Steps: </span>
+                <span className="font-semibold tabular-nums">{humanSession.totalSteps}</span>
+              </div>
+            </div>
+            <Button
+              onClick={onEndSession}
+              size="sm"
+              variant="secondary"
+              className="w-full h-8 text-xs"
+            >
+              End Session
+            </Button>
+          </>
+        ) : (
+          <Button
+            onClick={onStartSession}
+            disabled={!state}
+            size="sm"
+            variant="secondary"
+            className="w-full h-8 text-xs"
+          >
+            Start Session
+          </Button>
+        ))}
 
       {/* Saved Layouts section */}
       {onSaveLayout && onLoadLayout && onDeleteLayout && (

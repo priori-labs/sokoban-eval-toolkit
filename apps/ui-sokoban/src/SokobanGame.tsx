@@ -6,7 +6,7 @@ import {
 } from '@sokoban-eval-toolkit/ui-library/components/card'
 import { BOX_COLORS, MOVE_KEYS } from '@src/constants'
 import { useEditMode, useGameState, useLayoutPersistence } from '@src/hooks'
-import type { MoveDirection, SokobanLevel } from '@src/types'
+import type { HumanSession, MoveDirection, SokobanLevel } from '@src/types'
 import { getBoxesOnGoalsCount } from '@src/utils/gameEngine'
 import { getLmiqLevel } from '@src/utils/levelLoader'
 import { type SolutionResult, getSolution } from '@src/utils/solutionCache'
@@ -18,7 +18,6 @@ import { LevelSelector } from './components/LevelSelector'
 import { SokobanGrid } from './components/SokobanGrid'
 
 export function SokobanGame() {
-  const [aiInferenceTimeMs, setAiInferenceTimeMs] = useState<number | null>(null)
   const [isEditing, setIsEditing] = useState(true)
   const [coloredBoxRules, setColoredBoxRules] = useState(false)
   const initialLoadDone = useRef(false)
@@ -36,9 +35,7 @@ export function SokobanGame() {
     handleUndo,
     handleReset,
     handleRunSolution,
-  } = useGameState({
-    onLevelLoad: () => setAiInferenceTimeMs(null),
-  })
+  } = useGameState()
 
   // Use custom hook for edit mode
   const {
@@ -105,6 +102,86 @@ export function SokobanGame() {
     return solution.solution
   }, [solution, gameState])
 
+  // Human session state management
+  const [humanSession, setHumanSession] = useState<HumanSession | null>(null)
+  const sessionLevelIdRef = useRef<string | null>(null)
+
+  // Start a human player session
+  const handleStartSession = useCallback(() => {
+    if (!gameState) return
+
+    // Reset the puzzle first
+    handleReset()
+
+    setHumanSession({
+      isActive: true,
+      startTime: Date.now(),
+      totalSteps: 0,
+      levelId: gameState.level.id,
+      solutionPath: [{ ...gameState.playerPos }],
+    })
+    sessionLevelIdRef.current = gameState.level.id
+  }, [gameState, handleReset])
+
+  // End the human player session
+  const handleEndSession = useCallback(() => {
+    setHumanSession(null)
+    sessionLevelIdRef.current = null
+  }, [])
+
+  // Track steps during session
+  useEffect(() => {
+    if (!humanSession?.isActive || !gameState) return
+
+    const currentSteps = gameState.moveHistory.length
+    const currentPath = [
+      gameState.level.playerStart,
+      ...gameState.moveHistory.map((m) => {
+        // Calculate position after each move
+        const idx = gameState.moveHistory.indexOf(m)
+        const prevMoves = gameState.moveHistory.slice(0, idx + 1)
+        const pos = { ...gameState.level.playerStart }
+        for (const move of prevMoves) {
+          if (move.direction === 'UP') pos.y--
+          else if (move.direction === 'DOWN') pos.y++
+          else if (move.direction === 'LEFT') pos.x--
+          else if (move.direction === 'RIGHT') pos.x++
+        }
+        return pos
+      }),
+    ]
+
+    setHumanSession((prev) => {
+      if (!prev) return null
+      // Calculate total steps including previous attempts
+      const stepsBeforeThisAttempt = prev.totalSteps - (prev.solutionPath.length - 1)
+      return {
+        ...prev,
+        totalSteps: stepsBeforeThisAttempt + currentSteps,
+        solutionPath: currentPath,
+      }
+    })
+  }, [gameState?.moveHistory.length, humanSession?.isActive, gameState])
+
+  // Reset ends the session
+  const handleSessionReset = useCallback(() => {
+    if (humanSession?.isActive) {
+      handleEndSession()
+    }
+    handleReset()
+  }, [humanSession?.isActive, handleReset, handleEndSession])
+
+  // Auto-stop session on level change (but not on edit)
+  useEffect(() => {
+    if (!humanSession?.isActive) return
+
+    const currentLevelId = gameState?.level.id
+    if (currentLevelId && currentLevelId !== sessionLevelIdRef.current) {
+      // Level changed, end session
+      handleEndSession()
+    }
+  }, [gameState?.level.id, humanSession?.isActive, handleEndSession])
+
   // Load first LMIQ puzzle on mount
   useEffect(() => {
     if (initialLoadDone.current) return
@@ -145,7 +222,7 @@ export function SokobanGame() {
       // Reset (R) - but not with meta keys
       if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault()
-        handleReset()
+        handleSessionReset()
         return
       }
 
@@ -212,7 +289,7 @@ export function SokobanGame() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleMove, handleUndo, handleReset, isEditing, setAddMode, setSelectedEntity])
+  }, [handleMove, handleUndo, handleSessionReset, isEditing, setAddMode, setSelectedEntity])
 
   const boxesOnGoals = gameState ? getBoxesOnGoalsCount(gameState) : 0
   const totalBoxes = gameState?.boxes.length ?? 0
@@ -242,7 +319,6 @@ export function SokobanGame() {
             />
             <ControlPanel
               state={gameState}
-              aiInferenceTimeMs={aiInferenceTimeMs}
               savedLayouts={savedLayouts}
               layoutName={layoutName}
               onLayoutNameChange={setLayoutName}
@@ -255,6 +331,9 @@ export function SokobanGame() {
               onReorderLayouts={handleReorderLayouts}
               selectedLayoutName={selectedLayoutName}
               onSelectedLayoutChange={setSelectedLayoutName}
+              humanSession={humanSession}
+              onStartSession={handleStartSession}
+              onEndSession={handleEndSession}
             />
           </CardContent>
         </Card>
@@ -381,6 +460,9 @@ export function SokobanGame() {
             onDragEnd={handleDragEnd}
             isDragging={isDraggingWalls}
             addMode={addMode}
+            solutionPath={
+              gameState?.isWon && humanSession?.isActive ? humanSession.solutionPath : undefined
+            }
           />
 
           {/* Legend */}
@@ -416,6 +498,20 @@ export function SokobanGame() {
               <div className="text-green-400/70 text-xs mt-0.5">
                 {gameState.moveHistory.filter((m) => m.wasPush).length} pushes
               </div>
+              {/* Session stats when won during a session */}
+              {humanSession?.isActive && (
+                <div className="mt-2 pt-2 border-t border-green-500/20">
+                  <div className="text-green-400/90 text-xs">
+                    Session: {humanSession.totalSteps} steps · {(() => {
+                      const ms = Date.now() - humanSession.startTime
+                      const seconds = Math.floor(ms / 1000)
+                      const minutes = Math.floor(seconds / 60)
+                      const secs = seconds % 60
+                      return `${minutes}:${secs.toString().padStart(2, '0')}`
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -463,7 +559,6 @@ export function SokobanGame() {
             onMove={handleAIMove}
             onReset={handleReset}
             disabled={!gameState}
-            onInferenceTimeChange={setAiInferenceTimeMs}
             isEditing={isEditing}
             coloredBoxRules={coloredBoxRules}
             onColoredBoxRulesChange={setColoredBoxRules}

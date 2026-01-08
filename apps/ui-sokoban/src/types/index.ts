@@ -82,6 +82,15 @@ export interface SolutionValidationResult {
   error?: string
 }
 
+// Human player session tracking
+export interface HumanSession {
+  isActive: boolean
+  startTime: number
+  totalSteps: number
+  levelId: string
+  solutionPath: Position[] // Path taken in the winning attempt
+}
+
 // AI prompt options
 export interface PromptOptions {
   asciiGrid: boolean

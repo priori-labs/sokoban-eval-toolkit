@@ -4,9 +4,7 @@
   "completedAt": 1767923344485,
   "puzzleFile": "Microban",
   "puzzleCount": 10,
-  "models": [
-    "minimax/minimax-m2.1"
-  ],
+  "models": ["minimax/minimax-m2.1"],
   "options": {
     "concurrency": 10
   },
@@ -19,17 +17,7 @@
       "solved": false,
       "error": "Invalid move at step 2: DOWN",
       "inferenceTimeMs": 308561,
-      "moves": [
-        "RIGHT",
-        "DOWN",
-        "DOWN",
-        "LEFT",
-        "UP",
-        "UP",
-        "UP",
-        "UP",
-        "UP"
-      ],
+      "moves": ["RIGHT", "DOWN", "DOWN", "LEFT", "UP", "UP", "UP", "UP", "UP"],
       "solutionLength": 9,
       "stepsExecuted": 1,
       "inputTokens": 474,
@@ -69,17 +57,7 @@
       "solved": false,
       "error": "Invalid move at step 6: UP",
       "inferenceTimeMs": 257161,
-      "moves": [
-        "RIGHT",
-        "UP",
-        "UP",
-        "LEFT",
-        "LEFT",
-        "UP",
-        "UP",
-        "DOWN",
-        "DOWN"
-      ],
+      "moves": ["RIGHT", "UP", "UP", "LEFT", "LEFT", "UP", "UP", "DOWN", "DOWN"],
       "solutionLength": 9,
       "stepsExecuted": 5,
       "inputTokens": 474,

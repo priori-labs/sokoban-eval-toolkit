@@ -4,9 +4,7 @@
   "completedAt": 1767916885632,
   "puzzleFile": "./data/puzzles.json",
   "puzzleCount": 10,
-  "models": [
-    "moonshotai/kimi-k2-thinking"
-  ],
+  "models": ["moonshotai/kimi-k2-thinking"],
   "options": {
     "concurrency": 10
   },

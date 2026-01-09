@@ -4,9 +4,7 @@
   "completedAt": 1767922337777,
   "puzzleFile": "Microban",
   "puzzleCount": 10,
-  "models": [
-    "deepseek/deepseek-v3.2"
-  ],
+  "models": ["deepseek/deepseek-v3.2"],
   "options": {
     "concurrency": 10
   },

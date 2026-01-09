@@ -2,6 +2,8 @@
 
 A web-based Sokoban puzzle environment for evaluating AI language models on spatial reasoning and planning tasks. Features procedural puzzle generation, a custom puzzle editor, an A* solver, and AI model integration via OpenRouter.
 
+<img width="1728" height="994" alt="Image" src="https://github.com/user-attachments/assets/99a4470b-4b86-4853-a15d-1ba0b506d44d" />
+
 ## Quick Start
 
 ```sh

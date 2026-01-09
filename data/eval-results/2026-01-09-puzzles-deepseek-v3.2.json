@@ -4,9 +4,7 @@
   "completedAt": 1767922101475,
   "puzzleFile": "./data/puzzles.json",
   "puzzleCount": 10,
-  "models": [
-    "deepseek/deepseek-v3.2"
-  ],
+  "models": ["deepseek/deepseek-v3.2"],
   "options": {
     "concurrency": 10
   },
@@ -19,12 +17,7 @@
       "solved": false,
       "error": "Solution did not solve the puzzle",
       "inferenceTimeMs": 102210,
-      "moves": [
-        "UP",
-        "RIGHT",
-        "DOWN",
-        "LEFT"
-      ],
+      "moves": ["UP", "RIGHT", "DOWN", "LEFT"],
       "solutionLength": 4,
       "stepsExecuted": 4,
       "inputTokens": 645,
@@ -25013,12 +25006,7 @@
       "solved": false,
       "error": "Invalid move at step 1: UP",
       "inferenceTimeMs": 105791,
-      "moves": [
-        "UP",
-        "RIGHT",
-        "DOWN",
-        "LEFT"
-      ],
+      "moves": ["UP", "RIGHT", "DOWN", "LEFT"],
       "solutionLength": 4,
       "stepsExecuted": 0,
       "inputTokens": 677,

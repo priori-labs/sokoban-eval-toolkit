@@ -4,9 +4,7 @@
   "completedAt": 1767923480076,
   "puzzleFile": "./data/puzzles.json",
   "puzzleCount": 10,
-  "models": [
-    "minimax/minimax-m2.1"
-  ],
+  "models": ["minimax/minimax-m2.1"],
   "options": {
     "concurrency": 10
   },
@@ -260,18 +258,7 @@
       "solved": false,
       "error": "Invalid move at step 2: LEFT",
       "inferenceTimeMs": 211017,
-      "moves": [
-        "LEFT",
-        "LEFT",
-        "UP",
-        "LEFT",
-        "LEFT",
-        "LEFT",
-        "LEFT",
-        "LEFT",
-        "DOWN",
-        "LEFT"
-      ],
+      "moves": ["LEFT", "LEFT", "UP", "LEFT", "LEFT", "LEFT", "LEFT", "LEFT", "DOWN", "LEFT"],
       "solutionLength": 10,
       "stepsExecuted": 1,
       "inputTokens": 692,

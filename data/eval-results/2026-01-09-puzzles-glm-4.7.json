@@ -4,9 +4,7 @@
   "completedAt": 1767920329093,
   "puzzleFile": "./data/puzzles.json",
   "puzzleCount": 10,
-  "models": [
-    "z-ai/glm-4.7"
-  ],
+  "models": ["z-ai/glm-4.7"],
   "options": {
     "concurrency": 10
   },

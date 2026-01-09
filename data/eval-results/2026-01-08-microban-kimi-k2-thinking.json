@@ -4,9 +4,7 @@
   "completedAt": 1767915944556,
   "puzzleFile": "Microban",
   "puzzleCount": 10,
-  "models": [
-    "moonshotai/kimi-k2-thinking"
-  ],
+  "models": ["moonshotai/kimi-k2-thinking"],
   "options": {
     "concurrency": 10
   },

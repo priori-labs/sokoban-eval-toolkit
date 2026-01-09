@@ -13,6 +13,7 @@ import {
   displaySaveConfirmation,
 } from './display'
 import { runEvaluation } from './eval-runner'
+import { notifyEvalComplete, notifyEvalFailed } from './notifications'
 import {
   confirmStart,
   promptEvalOptions,
@@ -115,6 +116,9 @@ async function main(): Promise<void> {
     // Save results (one file per model)
     const savedPaths = await saveEvalRun(run)
     displaySaveConfirmation(savedPaths)
+
+    // Send Slack notification
+    await notifyEvalComplete(run)
   } catch (error) {
     if (error instanceof Error) {
       // Handle user cancellation gracefully
@@ -124,8 +128,10 @@ async function main(): Promise<void> {
         process.exit(0)
       }
       displayError(error.message)
+      await notifyEvalFailed(error.message, 'unknown')
     } else {
       displayError('An unknown error occurred')
+      await notifyEvalFailed('An unknown error occurred', 'unknown')
     }
     process.exit(1)
   }
